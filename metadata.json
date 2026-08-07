@@ -1,0 +1,6 @@
+{
+  "name": "The Pantheon - Friend AI",
+  "description": "An interactive sanctuary and character storyboard pairing Greek mythological companions with therapeutic archetypes and Indian art styles, powered by Gemini.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
