@@ -1,0 +1,39 @@
+@import url('https://fonts.googleapis.com/css2?family=Lexend:wght@300;400;500;600;700&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400;1,700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Lexend", ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Atkinson Hyperlegible", ui-serif, Georgia, serif;
+
+  --color-periwinkle: #9fa6ff;
+  --color-periwinkle-hover: #838ae0;
+  --color-periwinkle-dark: #6e75e3;
+  --color-sage: #9eb5a6;
+  --color-sage-dark: #1b2420;
+  --color-sage-deep: #111614;
+  --color-brown: #3c2f27;
+  --color-brown-dark: #241c18;
+  --color-brown-deep: #140f0c;
+  --color-accent-white: #ffffff;
+}
+
+@utility scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility animate-spin-slow {
+  animation: spin 8s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
