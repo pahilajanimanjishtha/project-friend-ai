@@ -19,6 +19,7 @@ import PrivacyPolicy from './components/PrivacyPolicy';
 import ChurnDashboard from './components/ChurnDashboard';
 import AvatarCallWorkspace from './components/AvatarCallWorkspace';
 import TavusCallView from './components/TavusCallView';
+import SelfHostedAvatarWorkspace from './components/SelfHostedAvatarWorkspace';
 import LoginPage from './components/LoginPage';
 import { ambientEngine } from './lib/ambientAudioEngine';
 import { auth } from './lib/firebase';
@@ -66,6 +67,7 @@ export type ViewType =
   | 'waitlist' 
   | 'policy' 
   | 'churn'
+  | 'self-hosted'
   | 'login';
 
 const getViewFromPath = (pathName: string): ViewType => {
@@ -125,6 +127,9 @@ const getViewFromPath = (pathName: string): ViewType => {
     case '/decoy':
     case '/wiki':
       return 'decoy';
+    case '/self-hosted':
+    case '/self-hosted-avatar':
+      return 'self-hosted';
     case '/login':
     case '/signin':
       return 'login';
@@ -160,6 +165,7 @@ const getPathFromView = (v: ViewType): string => {
     case 'music': return '/music';
     case 'pitch': return '/pitch';
     case 'decoy': return '/decoy';
+    case 'self-hosted': return '/self-hosted';
     case 'login': return '/login';
     case 'home':
     default:
@@ -336,7 +342,7 @@ export default function App() {
 
   // Check extreme crisis override
   const isExtremeCrisis = localStorage.getItem('extreme_crisis_flag') === 'true';
-  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat'].includes(view);
+  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat', 'self-hosted'].includes(view);
   const requiresAuth = !isLoggedIn || !user;
 
   // Active view determination
@@ -424,7 +430,7 @@ export default function App() {
                   className={`px-3.5 py-1.5 rounded-xl font-mono text-[11px] font-bold transition-all cursor-pointer ${
                     callEngine === 'tavus'
                       ? 'bg-[#c9a45c] text-stone-950 shadow-md'
-                      : 'text-stone-400 hover:text-white hover:bg-white/5'
+                      : 'text-stone-[#c9a45c] hover:text-white hover:bg-white/5'
                   }`}
                 >
                   🎥 Tavus Video
@@ -443,6 +449,11 @@ export default function App() {
             </div>
 
             <TavusCallView />
+          </div>
+        )}
+        {activeView === 'self-hosted' && (
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 space-y-4">
+            <SelfHostedAvatarWorkspace isLightMode={isLightMode} />
           </div>
         )}
         {/* /sanctuary → Original deity companion text chat */}
