@@ -253,15 +253,16 @@ export function ReflectiveJournaling({ isLightMode, setView }: { isLightMode: bo
       };
 
       rec.onerror = (event: any) => {
-        console.error("Speech Recognition error:", event.error);
+        console.warn("Speech Recognition notice:", event.error);
         if (event.error === 'not-allowed') {
           setRecognitionError("Microphone access denied. Please allow microphone permissions in your browser.");
-        } else if (event.error === 'no-speech') {
-          // Ignore no-speech error gracefully to keep recording active
+          setIsRecording(false);
+        } else if (event.error === 'no-speech' || event.error === 'aborted') {
+          // Gracefully ignore pauses so recording stays active while user thinks
         } else {
-          setRecognitionError(`Speech recognition message: ${event.error}`);
+          setRecognitionError(`Speech recognition notice: ${event.error}`);
+          setIsRecording(false);
         }
-        setIsRecording(false);
       };
 
       rec.onend = () => {

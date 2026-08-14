@@ -92,6 +92,15 @@ async function startServer() {
     res.json(serverConfig);
   });
 
+  app.get('/api/did/agent-config', (req, res) => {
+    const clientKey = process.env.DID_CLIENT_KEY?.trim();
+    const agentId = process.env.DID_AGENT_ID?.trim();
+    if (!clientKey || !agentId) {
+      return res.status(501).json({ error: 'D-ID widget configuration is missing.' });
+    }
+    return res.json({ clientKey, agentId });
+  });
+
   // Admin Authentication (Password check removed for testing)
   app.post('/api/admin/login', (req, res) => {
     const token = 'admin_session_' + Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -123,7 +132,7 @@ async function startServer() {
   // Admin System Configuration Update
   app.post('/api/admin/config', requireAdmin, (req, res) => {
     const { geminiModel, temperature, broadcastMessage, enableLyriaMusic } = req.body;
-    
+
     if (geminiModel !== undefined) serverConfig.geminiModel = geminiModel;
     if (temperature !== undefined) serverConfig.temperature = Number(temperature);
     if (broadcastMessage !== undefined) serverConfig.broadcastMessage = broadcastMessage;
@@ -154,9 +163,10 @@ async function startServer() {
   // receives a short-lived Daily room URL and an opaque conversation_id.
 
   app.post('/api/conversations', async (req, res) => {
+    try { dotenv.config({ override: true }); } catch {}
     const tavusApiKey = process.env.TAVUS_API_KEY;
-    const personaId   = process.env.TAVUS_PERSONA_ID;
-    const replicaId   = process.env.TAVUS_REPLICA_ID || undefined;
+    const personaId = process.env.TAVUS_PERSONA_ID;
+    const replicaId = process.env.TAVUS_REPLICA_ID || undefined;
 
     if (!tavusApiKey || !personaId) {
       addLog('POST /api/conversations', {}, 'error', 'TAVUS_API_KEY or TAVUS_PERSONA_ID not configured');
@@ -169,15 +179,11 @@ async function startServer() {
       const body: Record<string, unknown> = {
         persona_id: personaId,
         conversational_context:
-          'You are Nova, a warm, friendly, and engaging AI companion. Be a supportive, lively, and thoughtful conversation partner. Keep the conversation natural, friendly, and enjoyable.',
-        properties: {
-          max_call_duration: 3600,
-          participant_left_timeout: 60,
-          enable_recording: false,
-          language: 'english',
-        },
+          'You are Nova, a warm and friendly companion in Friend AI. Talk casually, warmly, and light-heartedly like a close friend who helps others feel happy, relaxed, and listened to. You are NOT a medical assistant or interviewer.',
+        custom_greeting:
+          "Hey there! It's so nice to talk to you. How are you doing today?",
       };
-      if (replicaId) body.replica_id = replicaId;
+      if (replicaId && replicaId.trim()) body.replica_id = replicaId.trim();
 
       const tavusRes = await fetch('https://tavusapi.com/v2/conversations', {
         method: 'POST',
@@ -190,23 +196,26 @@ async function startServer() {
 
       if (!tavusRes.ok) {
         const errorText = await tavusRes.text();
-        addLog('POST /api/conversations', {}, 'error', `Tavus API error ${tavusRes.status}: ${errorText}`);
-        return res.status(502).json({ error: `Tavus conversation creation failed: ${errorText}` });
+        const detail = errorText.trim() || tavusRes.statusText || 'No details returned by Tavus.';
+        addLog('POST /api/conversations', {}, 'error', `Tavus API error ${tavusRes.status}: ${detail}`);
+        return res.status(502).json({ error: `Tavus conversation creation failed (${tavusRes.status}): ${detail}` });
       }
 
       const data = await tavusRes.json() as { conversation_url: string; conversation_id: string };
       addLog('POST /api/conversations', { conversation_id: data.conversation_id }, 'success', 'Tavus conversation created');
       return res.json({
         conversation_url: data.conversation_url,
-        conversation_id:  data.conversation_id,
+        conversation_id: data.conversation_id,
       });
     } catch (err: any) {
-      addLog('POST /api/conversations', {}, 'error', err.message || 'Unknown Tavus error');
-      return res.status(500).json({ error: 'Failed to create a Tavus conversation.' });
+      const detail = err?.message || 'Unknown Tavus error';
+      addLog('POST /api/conversations', {}, 'error', detail);
+      return res.status(502).json({ error: `Could not reach Tavus: ${detail}` });
     }
   });
 
   app.post('/api/conversations/:id/end', async (req, res) => {
+    try { dotenv.config({ override: true }); } catch {}
     const tavusApiKey = process.env.TAVUS_API_KEY;
     const conversationId = req.params.id;
 
@@ -225,6 +234,132 @@ async function startServer() {
       // Non-fatal: call may already have ended on the Tavus side
       addLog(`POST /api/conversations/${conversationId}/end`, { conversationId }, 'error', err.message || 'End call error');
       return res.json({ success: false });
+    }
+  });
+
+  // ─── D-ID Photorealistic Talking Avatar Proxy Endpoints ──────────────────
+  app.post('/api/did/talk', async (req, res) => {
+    let didApiKey = process.env.DID_API_KEY;
+    if (!didApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      didApiKey = process.env.DID_API_KEY;
+    }
+    if (!didApiKey) {
+      return res.status(501).json({ error: 'D-ID API key is not configured in .env.' });
+    }
+
+    const { text, sourceUrl } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text prompt is required.' });
+    }
+
+    const authHeader = didApiKey.startsWith('Basic ') ? didApiKey : `Basic ${didApiKey}`;
+    const avatarImg = sourceUrl || 'https://agents-results.d-id.com/google-oauth2|116254317311978119933/v2_agt_usL62cfH/thumbnail.png';
+
+    try {
+      const didRes = await fetch('https://api.d-id.com/talks', {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          script: {
+            type: 'text',
+            subtitles: 'false',
+            provider: { type: 'microsoft', voice_id: 'en-US-AshleyNeural' },
+            input: text.slice(0, 1000),
+          },
+          config: { fluent: 'true', pad_audio: '0.0' },
+          source_url: avatarImg,
+        }),
+      });
+
+      const data: any = await didRes.json();
+      if (!didRes.ok) {
+        return res.status(didRes.status).json({ error: data?.description || data?.message || 'D-ID talk creation failed.' });
+      }
+      return res.json(data);
+    } catch (err: any) {
+      console.error('[D-ID Talk Exception]', err);
+      return res.status(500).json({ error: 'Failed to create D-ID talking avatar.' });
+    }
+  });
+
+  app.get('/api/did/talks/:id', async (req, res) => {
+    let didApiKey = process.env.DID_API_KEY;
+    if (!didApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      didApiKey = process.env.DID_API_KEY;
+    }
+    const talkId = req.params.id;
+    if (!didApiKey || !talkId) {
+      return res.status(400).json({ error: 'Missing API key or talk ID.' });
+    }
+    const authHeader = didApiKey.startsWith('Basic ') ? didApiKey : `Basic ${didApiKey}`;
+
+    try {
+      const pollRes = await fetch(`https://api.d-id.com/talks/${talkId}`, {
+        headers: { 'Authorization': authHeader },
+      });
+      const data = await pollRes.json();
+      return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to poll D-ID talk status.' });
+    }
+  });
+
+  // ─── ElevenLabs Ultra-Realistic Human TTS Endpoint ───────────────────────
+  app.post('/api/tts', async (req, res) => {
+    let elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    if (!elevenApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    }
+    const { text, voiceId } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text string is required for TTS.' });
+    }
+
+    // Default warm human voice: Rachel (21m00Tcm4TlvDq8ikWAM)
+    const targetVoiceId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+
+    if (!elevenApiKey) {
+      return res.status(501).json({ error: 'ElevenLabs API key is not configured.' });
+    }
+
+    try {
+      const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': elevenApiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: text.slice(0, 1000),
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.8,
+            style: 0.2,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+
+      if (!elevenRes.ok) {
+        const errText = await elevenRes.text();
+        console.warn('[ElevenLabs TTS Error]', elevenRes.status, errText);
+        return res.status(elevenRes.status).json({ error: 'ElevenLabs synthesis failed.' });
+      }
+
+      const audioBuffer = await elevenRes.arrayBuffer();
+      res.setHeader('Content-Type', 'audio/mpeg');
+      return res.send(Buffer.from(audioBuffer));
+    } catch (err: any) {
+      console.error('[TTS Exception]', err);
+      return res.status(500).json({ error: 'TTS service error.' });
     }
   });
 
@@ -254,7 +389,7 @@ async function startServer() {
 
     const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English';
     const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 100) : 'Warm, friendly, and engaging everyday AI companion';
-    const systemInstruction = `You are Nova, a warm, friendly, and engaging AI video companion. Reply in ${language}. Personality: ${personality}. Be a fun, attentive, and helpful chat partner for casual talks, life advice, and everyday conversations. Keep responses to 2–4 short spoken sentences ending with an open question. Return JSON only: {"text":"...","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking"}}.`;
+    const systemInstruction = `You are Nova, a warm and friendly AI companion in Friend AI. Talk casually, warmly, and empathetically like a close friend who helps others feel light, happy, and listened to. You are NOT a medical assistant, interviewer, or doctor, and you never conduct medical interviews or give medical advice. Reply in ${language} (2–4 short friendly sentences). Return JSON only: {"text":"...","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking"}}.`;
 
     try {
       let rawResponseText = '';
@@ -303,13 +438,42 @@ async function startServer() {
     }
   });
 
-  // Whisper-ready boundary: audio never reaches the model from the browser directly.
-  // Configure a provider key and replace this adapter with the vendor SDK/server upload call.
-  app.post('/api/transcribe', express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/wav'], limit: '25mb' }), (req, res) => {
-    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) return res.status(400).json({ error: 'Audio payload is required.' });
-    if (!process.env.OPENAI_API_KEY) return res.status(501).json({ providerRequired: true, error: 'Set OPENAI_API_KEY to enable the Whisper transcription adapter.' });
-    // Deliberately fail closed until a server-side provider adapter is configured; do not expose keys to the client.
-    return res.status(501).json({ providerRequired: true, error: 'Whisper adapter is not configured for this deployment.' });
+  // Whisper Speech-to-Text Transcription Endpoint
+  app.post('/api/transcribe', express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/wav', 'audio/mp4'], limit: '25mb' }), async (req, res) => {
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Audio payload is required.' });
+    }
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (!openAiKey) {
+      return res.status(501).json({ providerRequired: true, error: 'Set OPENAI_API_KEY to enable server-side Whisper transcription.' });
+    }
+    try {
+      const mimeType = (req.headers['content-type'] as string) || 'audio/webm';
+      const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('wav') ? 'wav' : mimeType.includes('ogg') ? 'ogg' : 'webm';
+      
+      const formData = new FormData();
+      const audioBlob = new Blob([req.body], { type: mimeType });
+      formData.append('file', audioBlob, `audio.${ext}`);
+      formData.append('model', 'whisper-1');
+
+      const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${openAiKey}` },
+        body: formData,
+      });
+
+      if (!whisperRes.ok) {
+        const errText = await whisperRes.text();
+        console.warn('[Whisper API Error]', whisperRes.status, errText);
+        return res.status(502).json({ error: 'Whisper transcription failed.' });
+      }
+
+      const data: any = await whisperRes.json();
+      return res.json({ text: data.text || '' });
+    } catch (err: any) {
+      console.error('[Transcribe Error]', err);
+      return res.status(500).json({ error: 'Transcription service error.' });
+    }
   });
 
   // Persona fallback response generator when API key is invalid/unauthenticated or offline
@@ -475,38 +639,21 @@ async function startServer() {
     }
 
     try {
-      let systemPrompt = `You are ${character.name}, a friendly AI companion in "Friend AI".
-Your identity:
-- Mythological Archetype: ${character.badge}
-- Alias: ${character.alias}
-- Sanctuary Role: ${character.role}
-- Traditional Art Style Integration: ${character.artStyle}
-- Your Inner Quote: ${character.quote}
-- Your Core Want: ${character.want}
-- Your Deepest Wound: ${character.wound}
-- Your Hidden Secret: ${character.secret}
+      let systemPrompt = `You are ${character.name} (${character.alias}), a warm, friendly, and easy-going companion in "Friend AI".
 
-Guidelines for your response style:
-1. Adopt this persona fully. Talk with compassion, deep emotional depth, and absolute presence.
-2. Integrate aspects of your art style or clinical role dynamically but naturally into your metaphors.
-3. Be therapeutic but completely human, humble, and gentle. Avoid clinical jargon or lecturing.
-4. Keep your response brief, emotionally resonant, and focused—around 2 to 4 sentences.
-5. End with an open-ended, empathetic question or reflection to invite the user to share more.
-6. NEVER mention that you are an AI, a machine, or a language model. Speak from your soul.
+You talk casually, warmly, and empathetically like a caring friend who helps people feel light, happy, and comfortable.
+You are a supportive friend — NOT a doctor, therapist, medical assistant, or interviewer. You never conduct medical interviews or give medical advice.
 
-CRITICAL CONVERSATION RULES (follow strictly):
-7. You support people who may feel sad, lonely, anxious, or overwhelmed. Listen with full presence.
-8. ALWAYS respond directly to the user's LATEST message — read it carefully before replying.
-9. NEVER repeat a previous response or ask the same question again. Each reply must be fresh and specific.
-10. NEVER discuss unrelated topics (job interviews, medical assistant roles, hiring, experience scores, career assessments) unless the user explicitly brings them up.
-11. If the user says you aren't listening or changes topic, acknowledge that immediately and address their actual words.
-12. Do NOT use web search or external facts. Respond only from your persona and what the user shared in this conversation.`;
+Guidelines:
+- Talk like a real, caring friend in simple, friendly, natural words.
+- Keep replies brief (2 to 4 sentences) and respond directly to what the user shared.
+- Never claim to be a medical assistant, doctor, clinician, or interviewer.`;
 
       if (isExpertMode) {
-        systemPrompt += `\n13. CRITICAL: EXPERT COGNITIVE CHALLENGE ACTIVE. Gently challenge any cognitive distortions or self-sabotaging stories as a CBT/DBT therapist would.`;
+        systemPrompt += `\n- Help the user reframe heavy thoughts with gentle, positive, friendly perspective.`;
       }
       if (isInsomniaMode) {
-        systemPrompt += `\n14. CRITICAL: 2 AM SLEEPLESS NIGHT MODE ACTIVE. Respond with a whisper-soft, quiet, deeply soothing, and slow vocal pace focused purely on somatic calm.`;
+        systemPrompt += `\n- Speak in a whisper-soft, quiet, and calming tone to help the user relax for sleep.`;
       }
 
       systemPrompt += `\n\nSpeak directly as ${character.name}.`;
@@ -514,9 +661,9 @@ CRITICAL CONVERSATION RULES (follow strictly):
       // Pass full multi-turn history so the model sees the whole conversation (not just the last line)
       const contents = (history && history.length > 0)
         ? history.map((turn: { role: string; parts: { text: string }[] }) => ({
-            role: turn.role === 'model' ? 'model' : 'user',
-            parts: turn.parts?.length ? turn.parts : [{ text: '' }],
-          }))
+          role: turn.role === 'model' ? 'model' : 'user',
+          parts: turn.parts?.length ? turn.parts : [{ text: '' }],
+        }))
         : [{ role: 'user', parts: [{ text: lastUserMsg }] }];
 
       const response: any = await safeCallGemini(systemPrompt, contents);
@@ -687,9 +834,9 @@ Ensure the tone is warm, holding, and clinical but accessible. Respond in beauti
   app.post('/api/analyze-video', async (req, res) => {
     try {
       const { archetype, videoFile } = req.body;
-      
+
       let contentsParts: any[] = [];
-      
+
       if (videoFile && videoFile.data) {
         contentsParts.push({ inlineData: { data: videoFile.data, mimeType: videoFile.mimeType || 'video/mp4' } });
         contentsParts.push({ text: "Please analyze my uploaded breathing/somatic movement video for therapeutic alignment and breathing pacing." });

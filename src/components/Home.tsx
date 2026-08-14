@@ -40,10 +40,10 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
   const bentoCards = [
     {
       id: 'chat',
-      title: "Private Chat Buddy",
-      description: "A safe, friendly space to talk about how you feel. It is totally private — like a secret diary just for you!",
-      icon: MessageSquare,
-      emoji: "💬",
+      title: "Nova Live Video Call",
+      description: "Face-to-face real-time AI video call with Nova for warm, supportive conversations, venting, and real-time listening.",
+      icon: Video,
+      emoji: "🎥",
       color: "from-blue-500/10 to-indigo-500/10",
       border: "hover:border-indigo-400/50",
       glow: "hover:shadow-[0_0_20px_rgba(110,117,227,0.12)]",
@@ -51,8 +51,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'journal',
-      title: "Happy Diary",
-      description: "Write down what happened today! Keep a lovely diary of your adventures and look at all the good things you did.",
+      title: "Mindful Reflection Journal",
+      description: "Express your thoughts, capture daily reflections, and build a private personal growth diary.",
       icon: PenTool,
       emoji: "📓",
       color: "from-amber-500/10 to-orange-500/10",
@@ -62,8 +62,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'mood',
-      title: "Feeling Chart",
-      description: "See a cool color chart of how you feel! Track if you are happy, sleepy, or excited each day.",
+      title: "Mood & Energy Analytics",
+      description: "Visual emotional tracking charts to monitor your daily mood patterns, energy levels, and emotional wellness.",
       icon: BarChart3,
       emoji: "📊",
       color: "from-emerald-500/10 to-teal-500/10",
@@ -73,8 +73,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'slow',
-      title: "Slow Letters",
-      description: "Send friendly letters that arrive slowly! Write nice notes to others and get cute letters back.",
+      title: "Slow Letters & Reflection",
+      description: "Write reflective notes to yourself or companion guides that arrive at a gentle, deliberate pace.",
       icon: Mail,
       emoji: "✉️",
       color: "from-pink-500/10 to-rose-500/10",
@@ -84,8 +84,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'community',
-      title: "Friendly Circle",
-      description: "Meet nice friends in a safe, quiet circle! Play together and share things you love.",
+      title: "Peer Sanctuary Circle",
+      description: "A serene, quiet community space to share reflections, read uplifting thoughts, and feel grounded.",
       icon: Users,
       emoji: "🪷",
       color: "from-purple-500/10 to-fuchsia-500/10",
@@ -95,8 +95,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'wellness',
-      title: "Breathe & Relax",
-      description: "Take deep breaths with a beautiful moving circle! Relax your body and feel super calm and happy.",
+      title: "Somatic Breathing & Reset",
+      description: "Guided 5-4-3-2-1 sensory grounding and box breathing exercises to reduce stress, anxiety, and overwhelm.",
       icon: HeartPulse,
       emoji: "🌿",
       color: "from-green-500/10 to-emerald-500/10",
@@ -106,8 +106,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'clinical',
-      title: "Helper Friends",
-      description: "Need helper friends? Find phone numbers and websites of kind helpers who can assist you anytime.",
+      title: "Emergency Crisis Directories",
+      description: "Verified 24/7 emergency crisis support helplines, regional emergency contacts, and professional directories.",
       icon: ShieldCheck,
       emoji: "⚕️",
       color: "from-red-500/10 to-orange-500/10",
@@ -117,8 +117,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'blog',
-      title: "Happy Brain Stories",
-      description: "Read short, happy stories about how our brains work! Learn fun tricks to keep your mind smiling.",
+      title: "Psychoeducation & Articles",
+      description: "Short, insightful articles on cognitive reframing, somatic mindfulness, and brain science.",
       icon: BookOpen,
       emoji: "📚",
       color: "from-cyan-500/10 to-sky-500/10",
@@ -128,8 +128,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'sync',
-      title: "Workspace & Meet Hub",
-      description: "Spawn live Google Meet rooms, save diaries to Google Drive, and draft emails to your helpful guides!",
+      title: "Workspace & Keep Sync Hub",
+      description: "Integrated Google Keep note sync, Drive journal backups, and live meeting space tools.",
       icon: Cloud,
       emoji: "🌌",
       color: "from-[#c9a45c]/10 to-indigo-500/10",
@@ -142,8 +142,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'pantheon',
-      title: "12 Friendly Guides",
-      description: "Meet 12 friendly guides! Each helper has a special story and super powers to help you feel happy and brave.",
+      title: "12 Archetypal Companion Guides",
+      description: "Explore 12 unique archetypal guides (Sisyphus, Persephone, Athena, etc.) tailored for specific emotional support.",
       icon: Sparkles,
       emoji: "🎨",
       color: "from-amber-500/10 to-yellow-500/10",
@@ -153,8 +153,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'music',
-      title: "Happy Music Maker",
-      description: "Compose magical songs using simple words! Pick your music size, add a picture, and listen!",
+      title: "AI Ambient Soundscapes",
+      description: "Generate relaxing ambient music and personalized soundscapes tailored to your mood and focus.",
       icon: Music,
       emoji: "🎵",
       color: "from-amber-500/10 to-red-500/10",
@@ -164,8 +164,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'prescription',
-      title: "Prescription Analyzer",
-      description: "Scan your prescriptions or medicine packages to receive calm, beautiful neurological descriptions and somatic breathing exercises.",
+      title: "Prescription Helper & Safety",
+      description: "Scan medicine labels or packages for clear medication info, clinical context, and calming breathing pairings.",
       icon: Pill,
       emoji: "💊",
       color: "from-emerald-500/10 to-amber-500/10",
@@ -175,8 +175,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'videosanctuary',
-      title: "Video Sanctuary",
-      description: "Guided nature breathing exercises with visual circles, rhythmic waves, and deep therapeutic somatic video insights.",
+      title: "Somatic Video Sanctuary",
+      description: "Guided nature breathing video exercises with visual waves for deep physical relaxation.",
       icon: Video,
       emoji: "🎬",
       color: "from-blue-500/10 to-purple-500/10",
@@ -186,8 +186,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
     },
     {
       id: 'notes',
-      title: "Notes Sync (Keep)",
-      description: "View, create, color-code, pin, and sync your personal Google Keep notes directly to Google Drive & Tasks.",
+      title: "Google Keep Notes Sync",
+      description: "View, create, color-code, pin, and sync your personal Google Keep notes directly to Google Drive.",
       icon: StickyNote,
       emoji: "📌",
       color: "from-amber-500/10 to-emerald-500/10",
@@ -233,7 +233,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
           className="inline-flex items-center gap-2 border-2 border-[#c9a45c]/40 bg-[#c9a45c]/10 text-[#c9a45c] px-4 py-1.5 rounded-full text-[10px] font-mono tracking-[0.2em] uppercase font-bold"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          The Happy Brain Playground 🌟
+          PROJECT FRIEND AI • EMOTIONAL WELLNESS SANCTUARY 🪷
         </motion.div>
  
         <motion.h1
@@ -242,8 +242,8 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
           transition={{ duration: 0.8, delay: 0.1 }}
           className={`font-serif text-4xl sm:text-6xl tracking-tight leading-[1.1] font-bold ${isLightMode ? 'text-stone-900' : 'text-white'}`}
         >
-          A happy home for <br className="hidden sm:inline" />
-          <span className="text-[#c9a45c] font-serif font-black italic">your mind.</span>
+          AI Companion for Emotional <br className="hidden sm:inline" />
+          <span className="text-[#c9a45c] font-serif font-black italic">Wellness, Clarity & Peace.</span>
         </motion.h1>
  
         <motion.p
@@ -252,7 +252,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
           transition={{ duration: 0.8, delay: 0.2 }}
           className={`text-sm sm:text-base leading-relaxed max-w-2xl mx-auto font-sans ${isLightMode ? 'text-slate-600' : 'text-sage'}`}
         >
-          Twelve super fun tools to help you feel awesome! Talk to nice helpers, write in a diary, breathe slowly, and keep your mind smiling.
+          Connect with warm real-time AI video companions, chat with empathetic listening guides, track your daily mood, practice somatic breathing, and express yourself in a safe, confidential space.
         </motion.p>
  
         <motion.div
@@ -263,15 +263,15 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
         >
           <button
             onClick={() => setView('chat')}
-            className="w-full sm:w-auto font-serif text-xs uppercase tracking-[0.16em] bg-periwinkle-dark hover:bg-periwinkle-hover text-white px-8 py-3.5 rounded-xl font-bold transition-all hover:scale-[1.02] shadow-[0_8px_30px_rgba(110,117,227,0.3)] cursor-pointer"
+            className="w-full sm:w-auto font-serif text-xs uppercase tracking-[0.16em] bg-periwinkle-dark hover:bg-periwinkle-hover text-white px-8 py-3.5 rounded-xl font-bold transition-all hover:scale-[1.02] shadow-[0_8px_30px_rgba(110,117,227,0.3)] cursor-pointer flex items-center justify-center gap-2"
           >
-            Start Chatting Now!
+            🎥 Start Nova Live Video Call
           </button>
           <button
             onClick={() => setView('pantheon')}
             className={`w-full sm:w-auto font-serif text-xs uppercase tracking-[0.16em] border-2 px-8 py-3.5 rounded-xl font-bold transition-all hover:bg-white/5 cursor-pointer ${isLightMode ? 'border-slate-300 text-stone-800' : 'border-brown text-sage'}`}
           >
-            Meet the Helpers
+            🎨 Meet 12 Companion Guides
           </button>
         </motion.div>
  
@@ -338,11 +338,11 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
       {/* Nine Bento-Grid Interactive Features Section */}
       <div className="py-20 relative z-10">
         <div className="text-center mb-12 space-y-2">
-          <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-[#c9a45c] block">Super Fun Play Area</span>
+          <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-[#c9a45c] block">Sanctuary Capabilities &amp; Interactive Tools</span>
           <h2 className="font-serif text-3xl md:text-4xl font-bold tracking-tight">
-            Twelve Fun Things to Do!
+            Everything You Need for Daily Peace
           </h2>
-          <p className="text-xs text-slate-500 max-w-lg mx-auto">Click any card below to start playing and feeling happy!</p>
+          <p className="text-xs text-slate-500 max-w-lg mx-auto">Click any capability below to launch real-time AI video, companion chat, somatic exercises, or workspace sync.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -530,13 +530,13 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
           </div>
           <div>
             <span className="text-[11px] font-semibold tracking-[0.1em] text-[#e07070] uppercase block mb-1">
-              A Note from Your Helpers
+              Safety &amp; Non-Clinical Boundaries
             </span>
             <h3 className="font-serif text-2xl font-medium tracking-tight text-[#e07070] mb-3">
-              Keeping You Safe & Happy
+              Confidential Peer Support &amp; Privacy First
             </h3>
             <p className={`text-sm leading-relaxed tracking-wide mb-4 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
-              These AI buddies are super nice to talk to and help you relax. But remember, they are computer friends, not real doctors or therapists!
+              Project Friend AI provides supportive, peer-style emotional listening and mindful grounding. It is non-clinical and is not a substitute for clinical psychiatric treatment, medical diagnosis, or emergency intervention.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-500 mt-6">
               <div className="flex items-start gap-2">

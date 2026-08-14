@@ -8,7 +8,7 @@ import {
   RotateCcw, Star, Award, Zap, Shield, Trophy, CheckCircle, RefreshCw,
   Volume2, Play, Pause, Mic, MicOff, Brain, Moon, ShieldAlert, HeartPulse,
   Globe, Search, Sliders, Eye, Wind, Flame, CheckCircle2, Layers, Feather, HelpCircle,
-  Smile, Frown, Activity, Sparkle
+  Smile, Frown, Activity, Sparkle, ChevronDown
 } from 'lucide-react';
 
 // =========================================================================
@@ -556,31 +556,46 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
     if (SpeechRecognitionClass) {
       setSpeechSupported(true);
       const rec = new SpeechRecognitionClass();
-      rec.continuous = false;
-      rec.interimResults = false;
-      rec.lang = 'en-US';
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = navigator.language || 'en-US';
 
       rec.onstart = () => {
         setIsListening(true);
       };
 
       rec.onresult = (event: any) => {
-        const transcript = event.results[0][0].transcript;
-        if (transcript) {
-          setInputText((prev) => (prev ? prev + ' ' + transcript : transcript));
-          triggerGtaNotif("SPEECH TRANSCRIBED: \"" + (transcript.length > 30 ? transcript.slice(0, 30) + "..." : transcript) + "\"", 'text-[#c9a45c]');
+        let finalTranscript = '';
+        let interimTranscript = '';
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            finalTranscript += event.results[i][0].transcript;
+          } else {
+            interimTranscript += event.results[i][0].transcript;
+          }
+        }
+        const textToUse = finalTranscript || interimTranscript;
+        if (textToUse) {
+          setInputText((prev) => {
+            const base = prev.trim();
+            return base ? `${base} ${textToUse.trim()}` : textToUse.trim();
+          });
+          if (finalTranscript) {
+            triggerGtaNotif("SPEECH TRANSCRIBED: \"" + (finalTranscript.length > 30 ? finalTranscript.slice(0, 30) + "..." : finalTranscript) + "\"", 'text-[#c9a45c]');
+          }
         }
       };
 
       rec.onerror = (event: any) => {
-        console.error('Speech recognition error:', event.error);
-        setIsListening(false);
+        console.warn('Speech recognition notice:', event.error);
         if (event.error === 'not-allowed') {
-          setError('Microphone permission denied. Please allow microphone access.');
-        } else if (event.error === 'no-speech') {
-          // No speech detected, end gracefully without massive errors
+          setError('Microphone permission denied. Please allow microphone access in browser settings.');
+          setIsListening(false);
+        } else if (event.error === 'no-speech' || event.error === 'aborted') {
+          // Gracefully ignore pauses so recognition stays active while speaking
         } else {
-          setError(`Speech issue: ${event.error}`);
+          setError(`Speech notice: ${event.error}`);
+          setIsListening(false);
         }
       };
 
@@ -656,6 +671,39 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
   // Post-Session Integration Check-out Modal
   const [isIntegrationModalOpen, setIsIntegrationModalOpen] = useState<boolean>(false);
   const [postSessionInsight, setPostSessionInsight] = useState<string>('');
+
+  // Sanctuary Tools Dropdown Menu State
+  const [isToolsDropdownOpen, setIsToolsDropdownOpen] = useState<boolean>(false);
+  const toolsDropdownRef = useRef<HTMLDivElement>(null);
+
+  // Close tools dropdown on click outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (toolsDropdownRef.current && !toolsDropdownRef.current.contains(event.target as Node)) {
+        setIsToolsDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Auto-open target tool (Somatic Reset 5-4-3-2-1 or CBT Reframe) when triggered from Features navbar
+  useEffect(() => {
+    const handleOpenTool = () => {
+      const tool = localStorage.getItem('open_chat_tool');
+      if (tool === 'somatic-reset') {
+        setIsSomaticModalOpen(true);
+        localStorage.removeItem('open_chat_tool');
+      } else if (tool === 'cbt-reframe') {
+        setIsReframeModalOpen(true);
+        localStorage.removeItem('open_chat_tool');
+      }
+    };
+
+    handleOpenTool();
+    window.addEventListener('open_chat_tool', handleOpenTool);
+    return () => window.removeEventListener('open_chat_tool', handleOpenTool);
+  }, []);
 
   // Web Speech API Voice Synthesis States
   const [isTtsAutoPlay, setIsTtsAutoPlay] = useState<boolean>(() => {
@@ -1127,7 +1175,7 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
   ];
 
   return (
-    <div className={`relative min-h-[calc(100vh-80px)] text-white pt-24 pb-12 px-4 md:px-6 max-w-7xl mx-auto z-10 flex flex-col lg:flex-row gap-6 transition-all duration-500 ${isInsomniaMode ? 'brightness-90 sepia-[25%] contrast-[92%] saturate-[95%]' : ''}`}>
+    <div className={`relative min-h-[calc(100vh-80px)] text-white pt-20 sm:pt-24 pb-12 px-3 sm:px-6 w-full max-w-[1600px] mx-auto z-10 flex flex-col lg:flex-row gap-4 lg:gap-6 transition-all duration-500 overflow-hidden ${isInsomniaMode ? 'brightness-90 sepia-[25%] contrast-[92%] saturate-[95%]' : ''}`}>
       
       {/* Dynamic Screen Flash Overlay (GTA Wanted Level change effect) */}
       <AnimatePresence>
@@ -1284,7 +1332,7 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
 
       {/* SIDEBAR: Companion List as a Bento Box */}
       {!zenMode && (
-        <div className="w-full lg:w-80 flex flex-col border-2 border-brown bg-sage-dark rounded-[24px] overflow-hidden shrink-0">
+        <div className="w-full lg:w-64 xl:w-72 flex flex-col border-2 border-brown bg-sage-dark rounded-[24px] overflow-hidden shrink-0">
           <div className="p-4 border-b-2 border-brown bg-brown-deep/30 flex items-center justify-between">
             <div>
               <h2 className="font-serif text-lg tracking-wide text-white">The Sanctuary</h2>
@@ -1332,7 +1380,7 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
       )}
 
       {/* MAIN CHAT AREA as a Bento Box */}
-      <div className="flex-1 flex flex-col lg:flex-row border-2 border-brown bg-[#090d16] rounded-[24px] overflow-hidden min-h-[680px] lg:h-[800px] justify-between relative shadow-2xl">
+      <div className="flex-1 flex flex-col lg:flex-row border-2 border-brown bg-[#090d16] rounded-[24px] overflow-visible lg:overflow-hidden min-h-[680px] lg:h-[800px] justify-between relative isolate shadow-2xl">
         
         {/* Particle Backdrop tuned to active deity vibe */}
         {!zenMode && <DeityVibeAtmosphere deityId={activeChar.id} />}
@@ -1357,7 +1405,7 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
 
         {/* Left Side: Interactive Greek Statue Sandbox */}
         {!zenMode && (
-          <div className="w-full lg:w-[320px] xl:w-[360px] border-b-2 lg:border-b-0 lg:border-r-2 border-brown shrink-0 overflow-hidden relative z-10 bg-[#090d16]/30">
+          <div className="w-full lg:w-[260px] xl:w-[300px] border-b-2 lg:border-b-0 lg:border-r-2 border-brown shrink-0 overflow-hidden relative z-10 bg-[#090d16]/30">
             <DeityStatue 
               deityId={activeChar.id} 
               isTyping={isTyping} 
@@ -1368,13 +1416,13 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
         )}
 
         {/* Right Side: Message Feed & Chat Window */}
-        <div className="flex-1 flex flex-col justify-between overflow-hidden relative z-10 h-full">
+        <div className="flex-1 flex flex-col justify-between overflow-hidden relative z-10 h-full min-w-0">
 
           {/* Chat Header */}
-        <div className="p-4 border-b-2 border-brown bg-brown-deep/60 backdrop-blur-md flex items-center justify-between relative z-10">
-          <div className="flex items-center gap-3">
+        <div className="p-3 sm:p-4 border-b-2 border-brown bg-brown-deep/60 backdrop-blur-md flex flex-col xl:flex-row xl:items-center justify-between gap-3 relative z-20 shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center"
+              className="w-10 h-10 rounded-full flex items-center justify-center shrink-0"
               style={{
                 background: `radial-gradient(circle, ${activeChar.colorScheme.glow} 0%, rgba(255,255,255,0.03) 100%)`,
                 border: `2px solid ${activeChar.colorScheme.glow}`,
@@ -1384,22 +1432,22 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
                 {activeChar.alias[0]}
               </span>
             </div>
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-serif text-base text-white">{activeChar.name}</h3>
                 <span
-                  className={`text-[8px] tracking-widest font-mono uppercase px-2.5 py-0.5 rounded-full ${activeChar.colorScheme.badge}`}
+                  className={`text-[8px] tracking-widest font-mono uppercase px-2 py-0.5 rounded-full ${activeChar.colorScheme.badge}`}
                 >
                   {activeChar.badge}
                 </span>
               </div>
-              <p className="text-[9px] text-sage font-semibold tracking-wider uppercase">
+              <p className="text-[9px] text-sage font-semibold tracking-wider uppercase truncate max-w-[200px] sm:max-w-[320px]">
                 {activeChar.role} &middot; {activeChar.artStyle} Art integration
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             
             {/* Zen Mode Button */}
             <button
@@ -1408,7 +1456,7 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
                 triggerGtaNotif(!zenMode ? 'ZEN MODE ACTIVE 🧘' : 'ZEN MODE OFF 🌸', 'text-[#c9a45c]');
               }}
               title="Toggle Zen Mode (Clean Chat, No Animations)"
-              className={`px-3 py-1.5 rounded-xl border-2 font-mono text-[10px] uppercase font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+              className={`order-4 w-full sm:order-none sm:w-auto px-3 py-1.5 rounded-xl border-2 font-mono text-[10px] uppercase font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
                 zenMode
                   ? 'bg-amber-500/20 border-amber-500/60 text-amber-400'
                   : 'border-brown text-sage hover:border-sage hover:text-white bg-brown-deep/20'
@@ -1416,22 +1464,23 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
             >
               <span>{zenMode ? '🧘 Zen On' : '🌸 Zen Off'}</span>
             </button>
-
             {/* GTA WANTED STRESS HUD */}
             {!zenMode && (
-              <div className="flex flex-col items-end shrink-0 select-none">
-                <span className="text-[8px] font-mono text-[#c9a45c] tracking-[0.15em] font-black uppercase mb-1">
-                  Wanted Stress
+              <div className="flex min-w-[145px] flex-1 flex-col items-start rounded-xl border border-[#c9a45c]/20 bg-black/20 px-2.5 py-1.5 sm:min-w-0 sm:flex-none sm:items-end sm:border-0 sm:bg-transparent sm:p-0 shrink-0 select-none">
+                <span className="text-[9px] font-mono text-[#c9a45c] tracking-[0.12em] font-black uppercase mb-1">
+                  Stress level <span className="text-white/60">{wantedStress}/5</span>
                 </span>
-                <div className="flex gap-1">
+                <div className="flex gap-1" role="group" aria-label="Set your current stress level">
                   {[1, 2, 3, 4, 5].map((star) => {
                     const isWanted = star <= wantedStress;
                     return (
                       <button
                         key={star}
                         onClick={() => adjustWantedStress(star)}
-                        className="focus:outline-none transition-transform hover:scale-125 cursor-pointer"
-                        title={`Manually lower/raise your wanted stress level`}
+                        className="rounded p-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#c9a45c] transition-transform hover:scale-125 cursor-pointer"
+                        aria-label={`Set stress level to ${star} out of 5`}
+                        aria-pressed={isWanted}
+                        title={`Set stress level to ${star} out of 5`}
                       >
                         <Star
                           className={`w-4 h-4 ${
@@ -1469,153 +1518,11 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
         </div>
 
         {/* Customized Procedural Indian Flute & Tanpura Player */}
-        <div className="px-4 py-3 bg-black/20 border-b border-brown/40 flex justify-center relative z-10">
+        <div className="px-4 py-3 bg-black/20 border-b border-brown/40 flex justify-center relative z-20">
           <DeityFlutePlayer deityId={activeChar.id} />
         </div>
 
-        {/* SURVEY-BASED THERAPEUTIC MODE CONTROLLER BAR */}
-        <div className="px-4 py-2 bg-black/35 border-b border-brown/40 flex flex-wrap items-center justify-center gap-2.5 relative z-10 text-xs font-mono">
-          {/* Somatic Grounding & Box Breathing Triage */}
-          <button
-            type="button"
-            onClick={() => setIsSomaticModalOpen(true)}
-            title="5-4-3-2-1 Sensory Reset & Interactive Square Box Breathing Pacer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-teal-500/40 text-teal-300 hover:text-white hover:border-teal-400 bg-teal-500/10 transition-all cursor-pointer font-bold"
-          >
-            <Wind className="w-3.5 h-3.5 text-teal-400 animate-pulse" />
-            <span>🧘 Somatic Reset (5-4-3-2-1)</span>
-          </button>
-
-          {/* Cognitive Defusion & Reframe Vault */}
-          <button
-            type="button"
-            onClick={() => setIsReframeModalOpen(true)}
-            title="CBT Cognitive Distortion Spotter & Unburdening Ritual Vault"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-sky-500/40 text-sky-300 hover:text-white hover:border-sky-400 bg-sky-500/10 transition-all cursor-pointer font-bold"
-          >
-            <Brain className="w-3.5 h-3.5 text-sky-400" />
-            <span>🧠 CBT Reframe & Unburden</span>
-          </button>
-
-          {/* Finish & Integrate Session */}
-          <button
-            type="button"
-            onClick={() => setIsIntegrationModalOpen(true)}
-            title="End-of-Session Integration Check-out & Wisdom Journal Sync"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-[#c9a45c]/40 text-[#c9a45c] hover:text-white hover:border-[#c9a45c] bg-[#c9a45c]/10 transition-all cursor-pointer font-bold"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-[#c9a45c]" />
-            <span>✨ Integrate Session</span>
-          </button>
-
-          {/* Anonymity Guard */}
-          <button
-            type="button"
-            onClick={togglePrivateMode}
-            title="Zero-Trace Private Mode: No messages saved to local or cloud databases"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              isPrivateMode 
-                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-400' 
-                : 'bg-brown-deep/20 border-brown text-sage hover:text-white hover:border-sage'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>Anonymity: {isPrivateMode ? 'ON 🛡️' : 'OFF'}</span>
-          </button>
-
-          {/* Expert Clinical Guard */}
-          <button
-            type="button"
-            onClick={toggleExpertMode}
-            title="Cognitive Reframing Honesty: Deity will gently challenge you instead of simple agreement"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              isExpertMode 
-                ? 'bg-purple-500/10 border-purple-500/40 text-purple-300' 
-                : 'bg-brown-deep/20 border-brown text-sage hover:text-white hover:border-sage'
-            }`}
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>Clinical Honesty: {isExpertMode ? 'ON 🧠' : 'OFF'}</span>
-          </button>
-
-          {/* 2 AM Insomnia Mode */}
-          <button
-            type="button"
-            onClick={toggleInsomniaMode}
-            title="2 AM Insomnia Mode: Warm eye-safe blue-light filter & soothing sleep-inducing dialogue guidance"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer ${
-              isInsomniaMode 
-                ? 'bg-amber-500/10 border-amber-500/40 text-amber-400' 
-                : 'bg-brown-deep/20 border-brown text-sage hover:text-white hover:border-sage'
-            }`}
-          >
-            <Moon className="w-3.5 h-3.5" />
-            <span>2 AM Sleepless: {isInsomniaMode ? 'ON 🌙' : 'OFF'}</span>
-          </button>
-
-          {/* SOS Emergencies */}
-          <button
-            type="button"
-            onClick={() => setIsCrisisModalOpen(true)}
-            title="Emergency Support & Crisis Resources"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-500/40 text-red-400 hover:text-red-300 hover:border-red-400 bg-red-500/10 transition-all cursor-pointer"
-          >
-            <HeartPulse className="w-3.5 h-3.5 text-red-500 animate-pulse" />
-            <span className="font-bold">SOS 📞</span>
-          </button>
-
-          {/* Web Speech Synthesis Controls */}
-          <button
-            type="button"
-            onClick={() => {
-              const next = !isTtsAutoPlay;
-              setIsTtsAutoPlay(next);
-              localStorage.setItem('is_tts_autoplay', String(next));
-              if (!next) stopSpeech();
-              triggerGtaNotif(next ? 'AI VOICE SPEECH: AUTO 🔊' : 'AI VOICE SPEECH: MUTED 🔇', 'text-sky-300');
-            }}
-            title="Toggle Web Speech Synthesis Auto-Read on message arrival"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border transition-all cursor-pointer font-bold ${
-              isTtsAutoPlay 
-                ? 'bg-sky-500/20 border-sky-400 text-sky-200' 
-                : 'bg-brown-deep/20 border-brown text-slate-400 hover:text-white hover:border-slate-400'
-            }`}
-          >
-            <Volume2 className={`w-3.5 h-3.5 ${isTtsAutoPlay ? 'text-sky-400 animate-pulse' : 'text-slate-500'}`} />
-            <span>Auto Voice: {isTtsAutoPlay ? 'ON 🔊' : 'OFF 🔇'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              const nextArchetype = voiceArchetype === 'auto' ? 'female' : voiceArchetype === 'female' ? 'male' : 'auto';
-              setVoiceArchetype(nextArchetype);
-              localStorage.setItem('voice_archetype', nextArchetype);
-              triggerGtaNotif(`VOICE ARCHETYPE: ${nextArchetype.toUpperCase()}`, 'text-amber-300');
-            }}
-            title="Cycle Voice Gender Archetype (Auto / Female / Male)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-amber-500/40 text-amber-300 hover:text-white hover:border-amber-400 bg-amber-500/10 transition-all cursor-pointer font-bold"
-          >
-            <span>
-              Voice: {voiceArchetype === 'auto' ? 'Auto (Companion) 🎭' : voiceArchetype === 'female' ? 'Female Archetype 👩' : 'Male Archetype 👨'}
-            </span>
-          </button>
-
-          {isSpeaking && (
-            <button
-              type="button"
-              onClick={stopSpeech}
-              title="Stop Speech Synthesis"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-red-500/60 bg-red-500/20 text-red-300 hover:bg-red-500/30 transition-all cursor-pointer font-bold animate-pulse"
-            >
-              <Pause className="w-3.5 h-3.5 text-red-400" />
-              <span>Stop Voice ⏹️</span>
-            </button>
-          )}
-        </div>
-
-        {/* Message Feed */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-brown-deep/10 relative z-10 scrollbar-none">
+        <div className="flex-1 min-h-[280px] overflow-y-auto p-4 sm:p-6 space-y-4 bg-brown-deep/10 relative z-10 scrollbar-none">
           <AnimatePresence initial={false}>
             {(messages[activeChar.id] || []).map((msg) => {
               const isUser = msg.sender === 'user';
@@ -1730,86 +1637,154 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Suggestion Prompts */}
+        {/* HORIZONTAL SUGGESTION PROMPTS BAR */}
         {activePrompts.length > 0 && (
-          <div className="px-4 py-2 border-t-2 border-brown flex gap-2 overflow-x-auto scrollbar-none bg-brown-deep/50 relative z-10">
+          <div className="border-t border-brown/50 bg-black/40 px-3 py-2 flex items-center overflow-x-auto max-w-full scrollbar-none gap-2 relative z-20 text-[11px] font-mono">
             {activePrompts.map((prompt, i) => (
               <button
-                key={i}
+                key={`prompt-${i}`}
+                type="button"
                 onClick={() => setInputText(prompt)}
-                className="text-[10px] text-sage hover:text-white border-2 border-brown hover:border-sage bg-brown-deep px-3 py-1.5 rounded-xl transition-all shrink-0 cursor-pointer font-semibold"
+                className="whitespace-nowrap text-[11px] leading-snug text-[#c9a45c] hover:text-white border border-[#c9a45c]/40 hover:border-[#c9a45c] bg-[#c9a45c]/10 hover:bg-[#c9a45c]/20 px-3 py-1.5 rounded-xl transition-all cursor-pointer font-semibold shrink-0"
               >
-                {prompt}
+                ✦ {prompt}
               </button>
             ))}
           </div>
         )}
 
-        {/* AFFECT LABELING & EMOTIONAL WEATHER BAR (AFFECTIVE NEUROSCIENCE) */}
-        <div className="px-4 py-2 border-t border-brown/50 bg-black/40 flex flex-col md:flex-row items-center justify-between gap-2 relative z-10 text-[11px] font-mono">
-          {/* Mood Chips */}
-          <div className="flex items-center gap-1.5 overflow-x-auto max-w-full scrollbar-none py-1">
-            <span className="text-sage text-[10px] uppercase font-bold shrink-0 mr-1 flex items-center gap-1">
-              <Activity className="w-3 h-3 text-[#c9a45c]" /> Emotional Weather:
-            </span>
-            {[
-              { label: '🌧️ Heavy Grief', color: 'border-slate-500 text-slate-300' },
-              { label: '⚡ Restless Anxiety', color: 'border-yellow-500/50 text-yellow-300' },
-              { label: '🌫️ Numb / Overwhelmed', color: 'border-purple-500/50 text-purple-300' },
-              { label: '🌿 Quiet Hope', color: 'border-emerald-500/50 text-emerald-300' },
-              { label: '🔥 Angry / Defensive', color: 'border-red-500/50 text-red-300' },
-              { label: '🍂 Exhausted', color: 'border-amber-500/50 text-amber-300' },
-              { label: '🕊️ Peaceful', color: 'border-sky-500/50 text-sky-300' },
-            ].map((mood) => {
-              const isSelected = selectedMoodTag === mood.label;
-              return (
+        {/* Message Input Box */}
+        <form onSubmit={handleSendMessage} className="p-3 sm:p-4 border-t-2 border-brown bg-brown-deep/40 backdrop-blur-md flex gap-2 sm:gap-3 relative z-20">
+          {/* Left-Side Tools Dropdown Menu */}
+          <div className="relative shrink-0" ref={toolsDropdownRef}>
+            <button
+              type="button"
+              onClick={() => setIsToolsDropdownOpen(!isToolsDropdownOpen)}
+              title="Therapeutic Tools & Mode Settings"
+              className={`h-11 px-3 sm:px-3.5 rounded-xl border-2 font-mono text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                isToolsDropdownOpen
+                  ? 'border-[#c9a45c] bg-[#c9a45c]/20 text-[#c9a45c] shadow-[0_0_12px_rgba(201,164,92,0.3)]'
+                  : 'border-brown bg-brown-deep hover:border-sage text-sage hover:text-white'
+              }`}
+            >
+              <Sparkles className="w-4 h-4 text-[#c9a45c]" />
+              <span className="hidden sm:inline">Tools</span>
+              <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isToolsDropdownOpen ? 'rotate-180 text-[#c9a45c]' : ''}`} />
+            </button>
+
+            {/* Popover Menu */}
+            {isToolsDropdownOpen && (
+              <div className="absolute bottom-full left-0 mb-2 w-64 sm:w-72 bg-[#0c1017] border-2 border-[#c9a45c]/40 rounded-2xl p-2 shadow-2xl z-50 flex flex-col gap-1.5 backdrop-blur-xl animate-in fade-in slide-in-from-bottom-2 duration-150">
+                <div className="px-3 py-1.5 border-b border-white/10 text-[10px] font-mono uppercase tracking-widest text-[#c9a45c] font-bold flex justify-between items-center">
+                  <span>Sanctuary Tools</span>
+                  <span className="text-white/40">⚡</span>
+                </div>
+
+                {/* 1. 🧠 CBT Reframe & Unburden */}
                 <button
-                  key={mood.label}
                   type="button"
                   onClick={() => {
-                    if (isSelected) {
-                      setSelectedMoodTag(null);
-                    } else {
-                      setSelectedMoodTag(mood.label);
-                      triggerGtaNotif(`AFFECT LABELED: ${mood.label.toUpperCase()} 🏷️`, 'text-white');
-                    }
+                    setIsReframeModalOpen(true);
+                    setIsToolsDropdownOpen(false);
                   }}
-                  className={`px-2.5 py-1 rounded-lg border text-[10px] transition-all cursor-pointer whitespace-nowrap ${
-                    isSelected
-                      ? 'bg-[#c9a45c] text-black font-bold border-[#c9a45c] shadow-[0_0_10px_rgba(201,164,92,0.3)]'
-                      : `bg-black/30 hover:bg-black/60 ${mood.color}`
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border border-sky-500/30 text-sky-200 hover:text-white hover:border-sky-400 bg-sky-950/40 hover:bg-sky-900/60 transition-all text-left text-xs font-semibold cursor-pointer"
+                >
+                  <Brain className="w-4 h-4 text-sky-400 shrink-0" />
+                  <span>🧠 CBT Reframe & Unburden</span>
+                </button>
+
+                {/* 2. ✨ Integrate Session */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsIntegrationModalOpen(true);
+                    setIsToolsDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border border-[#c9a45c]/40 text-[#c9a45c] hover:text-white hover:border-[#c9a45c] bg-[#c9a45c]/10 hover:bg-[#c9a45c]/20 transition-all text-left text-xs font-semibold cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4 text-[#c9a45c] shrink-0" />
+                  <span>✨ Integrate Session</span>
+                </button>
+
+                {/* 3. Anonymity Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    togglePrivateMode();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left text-xs font-semibold cursor-pointer ${
+                    isPrivateMode
+                      ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+                      : 'bg-black/40 border-brown/50 text-sage hover:text-white'
                   }`}
                 >
-                  {mood.label}
+                  <div className="flex items-center gap-2.5">
+                    <Shield className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>Anonymity</span>
+                  </div>
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-black/50">
+                    {isPrivateMode ? 'ON 🛡️' : 'OFF'}
+                  </span>
                 </button>
-              );
-            })}
+
+                {/* 4. Clinical Honesty Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleExpertMode();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left text-xs font-semibold cursor-pointer ${
+                    isExpertMode
+                      ? 'bg-purple-500/15 border-purple-500/40 text-purple-300'
+                      : 'bg-black/40 border-brown/50 text-sage hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Activity className="w-4 h-4 text-purple-400 shrink-0" />
+                    <span>Clinical Honesty</span>
+                  </div>
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-black/50">
+                    {isExpertMode ? 'ON 🧠' : 'OFF'}
+                  </span>
+                </button>
+
+                {/* 5. 2 AM Sleepless Toggle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    toggleInsomniaMode();
+                  }}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl border transition-all text-left text-xs font-semibold cursor-pointer ${
+                    isInsomniaMode
+                      ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+                      : 'bg-black/40 border-brown/50 text-sage hover:text-white'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <Moon className="w-4 h-4 text-amber-400 shrink-0" />
+                    <span>2 AM Sleepless</span>
+                  </div>
+                  <span className="font-mono text-[10px] font-bold px-2 py-0.5 rounded bg-black/50">
+                    {isInsomniaMode ? 'ON 🌙' : 'OFF'}
+                  </span>
+                </button>
+
+                {/* 6. SOS 📞 */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCrisisModalOpen(true);
+                    setIsToolsDropdownOpen(false);
+                  }}
+                  className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl border border-red-500/50 text-red-300 hover:text-white hover:border-red-400 bg-red-500/15 hover:bg-red-500/25 transition-all text-left text-xs font-bold cursor-pointer"
+                >
+                  <HeartPulse className="w-4 h-4 text-red-500 animate-pulse shrink-0" />
+                  <span>SOS 📞 Emergency Support</span>
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* SUDS Arousal Slider */}
-          <div className="flex items-center gap-2 shrink-0 bg-brown/20 px-2.5 py-1 rounded-lg border border-brown/40">
-            <span className="text-[10px] text-sage font-bold uppercase">SUDS Distress:</span>
-            <input
-              type="range"
-              min="1"
-              max="10"
-              value={sudsRating}
-              onChange={(e) => setSudsRating(Number(e.target.value))}
-              className="w-16 accent-[#c9a45c] bg-brown h-1 rounded cursor-pointer"
-              title="Subjective Units of Distress Scale (1 = Calm, 10 = Acute Crisis)"
-            />
-            <span className={`text-[10px] font-bold font-mono px-1.5 py-0.5 rounded ${
-              sudsRating >= 8 ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
-              sudsRating >= 5 ? 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30' :
-              'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-            }`}>
-              {sudsRating}/10
-            </span>
-          </div>
-        </div>
-
-        {/* Message Input Box */}
-        <form onSubmit={handleSendMessage} className="p-4 border-t-2 border-brown bg-brown-deep/40 backdrop-blur-md flex gap-3 relative z-10">
           <input
             type="text"
             value={inputText}
@@ -1847,8 +1822,8 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
             <Send className="w-4 h-4" />
           </button>
         </form>
-        </div>
       </div>
+    </div>
 
       {/* 4. EMERGENCY SOS HELPLINES MODAL */}
       <AnimatePresence>

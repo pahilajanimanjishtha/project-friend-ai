@@ -17,6 +17,8 @@ import Team from './components/Team';
 import Waitlist from './components/Waitlist';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import ChurnDashboard from './components/ChurnDashboard';
+import AvatarCallWorkspace from './components/AvatarCallWorkspace';
+import TavusCallView from './components/TavusCallView';
 import LoginPage from './components/LoginPage';
 import { ambientEngine } from './lib/ambientAudioEngine';
 import { auth } from './lib/firebase';
@@ -42,7 +44,8 @@ interface OracleProfile {
 export type ViewType =
   | 'home' 
   | 'pantheon' 
-  | 'chat' 
+  | 'chat'
+  | 'sanctuary'
   | 'pitch' 
   | 'decoy' 
   | 'oracle' 
@@ -88,8 +91,9 @@ const getViewFromPath = (pathName: string): ViewType => {
     case '/storyboard':
       return 'pantheon';
     case '/chat':
-    case '/sanctuary':
       return 'chat';
+    case '/sanctuary':
+      return 'sanctuary';
     case '/oracle':
       return 'oracle';
     case '/journal':
@@ -141,6 +145,7 @@ const getPathFromView = (v: ViewType): string => {
     case 'churn': return '/churn';
     case 'pantheon': return '/pantheon';
     case 'chat': return '/chat';
+    case 'sanctuary': return '/sanctuary';
     case 'oracle': return '/oracle';
     case 'journal': return '/journal';
     case 'mood': return '/mood';
@@ -194,6 +199,7 @@ export default function App() {
   const [isLightMode, setIsLightMode] = useState<boolean>(() => {
     return localStorage.getItem('isLightMode') === 'true';
   });
+  const [callEngine, setCallEngine] = useState<'did' | 'tavus' | 'interactive'>('tavus');
 
   useEffect(() => {
     localStorage.setItem('isLightMode', isLightMode.toString());
@@ -300,6 +306,13 @@ export default function App() {
     setSavedProfile(profile);
   };
 
+  // Auto-redirect authenticated users away from login page to home
+  useEffect(() => {
+    if (!authLoading && isLoggedIn && user && viewState === 'login') {
+      setView('home');
+    }
+  }, [authLoading, isLoggedIn, user, viewState]);
+
   // If we are in decoy view, we render the Wikipedia page standalone to look 100% convincing
   if (view === 'decoy') {
     return <DecoyWiki setView={setView} setSelectedCharId={setSelectedCharId} />;
@@ -323,13 +336,15 @@ export default function App() {
 
   // Check extreme crisis override
   const isExtremeCrisis = localStorage.getItem('extreme_crisis_flag') === 'true';
-  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login'].includes(view);
+  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat'].includes(view);
   const requiresAuth = !isLoggedIn || !user;
 
   // Active view determination
   let activeView = view;
   if (requiresAuth && !isPublicView) {
     activeView = 'login';
+  } else if (!requiresAuth && view === 'login') {
+    activeView = 'home';
   } else if (isExtremeCrisis && view !== 'policy') {
     activeView = 'clinical';
   }
@@ -386,14 +401,60 @@ export default function App() {
         {activeView === 'pantheon' && (
           <PantheonGrid setView={setView} setSelectedCharId={setSelectedCharId} isLightMode={isLightMode} />
         )}
+        {/* /chat → Photorealistic Human Video Companion Call */}
         {activeView === 'chat' && (
+          <div className="max-w-7xl mx-auto px-3 sm:px-6 py-4 space-y-4">
+            <div className="hidden flex items-center justify-between bg-stone-900/60 border border-stone-800 p-2.5 rounded-2xl max-w-2xl mx-auto backdrop-blur-md">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-[#c9a45c] font-bold px-2">
+                Avatar Call Engine:
+              </span>
+              <div className="flex items-center gap-1.5 text-xs">
+                <button
+                  onClick={() => setCallEngine('did')}
+                  className={`px-3.5 py-1.5 rounded-xl font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                    callEngine === 'did'
+                      ? 'bg-[#c9a45c] text-stone-950 shadow-md'
+                      : 'text-stone-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  🎬 D-ID AI Avatar
+                </button>
+                <button
+                  onClick={() => setCallEngine('tavus')}
+                  className={`px-3.5 py-1.5 rounded-xl font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                    callEngine === 'tavus'
+                      ? 'bg-[#c9a45c] text-stone-950 shadow-md'
+                      : 'text-stone-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  🎥 Tavus Video
+                </button>
+                <button
+                  onClick={() => setCallEngine('interactive')}
+                  className={`px-3.5 py-1.5 rounded-xl font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                    callEngine === 'interactive'
+                      ? 'bg-[#c9a45c] text-stone-950 shadow-md'
+                      : 'text-stone-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  ✨ 3D Companion
+                </button>
+              </div>
+            </div>
+
+            <TavusCallView />
+          </div>
+        )}
+        {/* /sanctuary → Original deity companion text chat */}
+        {activeView === 'sanctuary' && (
           <ChatSanctuary selectedCharId={selectedCharId} setSelectedCharId={setSelectedCharId} isLightMode={isLightMode} />
         )}
         {activeView === 'oracle' && (
           <OracleProfileCreator onProfileSaved={handleProfileSaved} savedProfile={savedProfile} isLightMode={isLightMode} />
         )}
         {activeView === 'pitch' && <PitchDeck isLightMode={isLightMode} />}
-        {['journal', 'mood', 'slow', 'community', 'wellness', 'clinical', 'blog', 'sync', 'prescription', 'videosanctuary'].includes(activeView) && (
+        {activeView === 'videosanctuary' && <AvatarCallWorkspace />}
+        {['journal', 'mood', 'slow', 'community', 'wellness', 'clinical', 'blog', 'sync', 'prescription'].includes(activeView) && (
           <div className="max-w-7xl mx-auto px-6 py-6 md:py-10">
             <SanctuaryTools 
               activeTool={activeView} 
@@ -445,19 +506,9 @@ export default function App() {
         )}
       </main>
 
-      {/* Quick Panic Escape Widget (Pandora's Box) */}
+      {/* Floating Dog Chatbot Widget */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {/* Tony the Floating Dog Chatbot */}
         <TonyFloatingChat isLightMode={isLightMode} />
-
-        <button
-          onClick={() => setView('decoy')}
-          title="Pandora's Box - Instant Safe Exit"
-          className="flex items-center gap-2 font-serif text-[10px] tracking-[0.14em] uppercase text-white bg-brown-deep/90 border-2 border-[#e07070]/40 hover:border-[#e07070] px-4 py-3 rounded-xl font-bold transition-all hover:scale-[1.04] shadow-[0_0_20px_rgba(224,112,112,0.25)] cursor-pointer backdrop-blur-md"
-        >
-          <ShieldAlert className="w-3.5 h-3.5 text-[#e07070] animate-pulse" />
-          Pandora's Box
-        </button>
       </div>
 
       {/* Small Ambient Footer */}
@@ -474,6 +525,9 @@ export default function App() {
               Storyboard
             </button>
             <button onClick={() => setView('chat')} className="hover:text-[#c9a45c] transition-colors">
+              Nova Call 🎥
+            </button>
+            <button onClick={() => setView('sanctuary')} className="hover:text-[#c9a45c] transition-colors">
               Sanctuary
             </button>
             <button onClick={() => setView('pitch')} className="hover:text-[#c9a45c] transition-colors">
@@ -483,10 +537,7 @@ export default function App() {
               Terms &amp; Policy 📜
             </button>
             <button onClick={() => setView('waitlist')} className="text-[#c9a45c] hover:text-[#c9a45c]/85 transition-colors font-bold">
-              Contribute 🏛️
-            </button>
-            <button onClick={() => setView('decoy')} className="text-[#e07070]/70 hover:text-[#e07070] transition-colors">
-              Pandora's Box
+              Contribute
             </button>
             <button onClick={() => setView('admin')} className="text-amber-500/80 hover:text-amber-500 transition-colors flex items-center gap-1 font-bold">
               Admin Area ⚙️
