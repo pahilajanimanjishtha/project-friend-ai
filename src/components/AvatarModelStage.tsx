@@ -225,7 +225,12 @@ function applyStandardGlbFrame(
   }
 
   // 3. ARKit-style Facial morph targets
-  setGlbMorph(rig, 'jawOpen', morphs.jawOpen);
+  // The Aryan GLB exposes ARKit jaw/mouth targets rather than VRM visemes.
+  // Drive the jaw more strongly from the synthesized viseme output and map
+  // the supporting lip targets as well, so fallback/browser audio also moves
+  // the GLB mouth.
+  const glbJawOpen = Math.min(1, morphs.jawOpen * 1.25 + morphs.viseme_aa * 0.15);
+  setGlbMorph(rig, 'jawOpen', glbJawOpen);
   setGlbMorph(rig, 'mouthFunnel', morphs.mouthFunnel);
   setGlbMorph(rig, 'mouthPucker', morphs.mouthPucker);
   setGlbMorph(rig, 'mouthStretchLeft', morphs.mouthWide);
@@ -236,6 +241,10 @@ function applyStandardGlbFrame(
   setGlbMorph(rig, 'mouthFrownRight', morphs.mouthFrown);
   setGlbMorph(rig, 'mouthPressLeft', morphs.viseme_PP);
   setGlbMorph(rig, 'mouthPressRight', morphs.viseme_PP);
+  setGlbMorph(rig, 'mouthLowerDownLeft', morphs.lipLowerDown);
+  setGlbMorph(rig, 'mouthLowerDownRight', morphs.lipLowerDown);
+  setGlbMorph(rig, 'mouthUpperUpLeft', morphs.lipUpperUp);
+  setGlbMorph(rig, 'mouthUpperUpRight', morphs.lipUpperUp);
   setGlbMorph(rig, 'eyeBlinkLeft', morphs.eyeBlinkLeft);
   setGlbMorph(rig, 'eyeBlinkRight', morphs.eyeBlinkRight);
   setGlbMorph(rig, 'eyeSquintLeft', morphs.eyeSquint);

@@ -5,6 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
 import { clampSessionTurns, fallbackDirective, safeDirective, type CallTurn } from './src/lib/avatarCall';
 import { detectCrisis, CRISIS_AVATAR_RESPONSE } from './src/lib/crisisSafetyFilter';
+import { getAvatarById } from './src/avatars';
 
 dotenv.config();
 
@@ -72,6 +73,29 @@ function addLog(endpoint: string, payload: any, status: 'success' | 'error', det
   logs.unshift(log);
   if (logs.length > maxLogs) {
     logs.pop();
+  }
+}
+
+function enforceEnglishLiveReply(value: string): string {
+  return value
+    .replace(/[\u0900-\u097F]/g, '')
+    .replace(/\b(?:arey|arre|haan|bhai|yaar|aur batao|batao|aap batao|sach mein)\b[,!:.\-]?/gi, '')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([,!.?])/g, '$1')
+    .trim();
+}
+
+async function withResponseDeadline<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -316,20 +340,25 @@ async function startServer() {
       try { dotenv.config({ override: true }); } catch {}
       elevenApiKey = process.env.ELEVENLABS_API_KEY;
     }
-    const { text, voiceId } = req.body || {};
+    const { text, voiceId, avatarId, includeTimestamps } = req.body || {};
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'Text string is required for TTS.' });
     }
 
     // Default warm human voice: Rachel (21m00Tcm4TlvDq8ikWAM)
-    const targetVoiceId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+    const configuredAvatar = typeof avatarId === 'string' ? getAvatarById(avatarId) : null;
+    const targetVoiceId = configuredAvatar?.voiceId || voiceId || process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
 
     if (!elevenApiKey) {
       return res.status(501).json({ error: 'ElevenLabs API key is not configured.' });
     }
 
     try {
-      const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`, {
+      const endpoint = includeTimestamps
+        ? `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}/with-timestamps`
+        : `https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`;
+      let usedTimestampEndpoint = Boolean(includeTimestamps);
+      let elevenRes = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'xi-api-key': elevenApiKey,
@@ -338,7 +367,7 @@ async function startServer() {
         },
         body: JSON.stringify({
           text: text.slice(0, 1000),
-          model_id: 'eleven_turbo_v2_5',
+          model_id: 'eleven_flash_v2_5',
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.8,
@@ -348,18 +377,51 @@ async function startServer() {
         }),
       });
 
+      // Some ElevenLabs accounts/models do not expose alignment on the
+      // timestamp route. Retry the same persona voice through the normal
+      // route before falling back to browser speech.
+      if (!elevenRes.ok && includeTimestamps) {
+        usedTimestampEndpoint = false;
+        elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`, {
+          method: 'POST',
+          headers: {
+            'xi-api-key': elevenApiKey,
+            'Content-Type': 'application/json',
+            'Accept': 'audio/mpeg',
+          },
+          body: JSON.stringify({
+            text: text.slice(0, 1000),
+            model_id: 'eleven_turbo_v2_5',
+            voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true },
+          }),
+        });
+      }
+
       if (!elevenRes.ok) {
         const errText = await elevenRes.text();
         console.warn('[ElevenLabs TTS Error]', elevenRes.status, errText);
         return res.status(elevenRes.status).json({ error: 'ElevenLabs synthesis failed.' });
       }
 
+      if (usedTimestampEndpoint) {
+        const data = await elevenRes.json() as {
+          audio_base64?: string;
+          alignment?: unknown;
+          normalized_alignment?: unknown;
+        };
+        if (!data.audio_base64) {
+          return res.status(502).json({ error: 'ElevenLabs returned no audio data.' });
+        }
+        return res.json({
+          audioBase64: data.audio_base64,
+          audioMime: 'audio/mpeg',
+          alignment: data.alignment || data.normalized_alignment || null,
+          voiceId: targetVoiceId,
+        });
+      }
+
       const audioBuffer = await elevenRes.arrayBuffer();
-      const base64 = Buffer.from(audioBuffer).toString('base64');
-      return res.json({
-        audioBase64: base64,
-        audioMime: 'audio/mpeg',
-      });
+      return res.json({ audioBase64: Buffer.from(audioBuffer).toString('base64'), audioMime: 'audio/mpeg', voiceId: targetVoiceId });
     } catch (err: any) {
       console.error('[TTS Exception]', err);
       return res.status(500).json({ error: 'TTS service error.' });
@@ -390,7 +452,7 @@ async function startServer() {
     }
     // ──────────────────────────────────────────────────────────────────
 
-    const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English or Hinglish';
+    const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English';
     const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 200) : 'warm, authentic, and caring close friend in Friend AI';
     const companionName = typeof settings.name === 'string' ? settings.name.slice(0, 50) : 'Aryan';
     const basePrompt = typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim()
@@ -401,8 +463,8 @@ You are talking live face-to-face with your friend inside Friend AI.
 
 CORE HUMAN VIBE & GUIDELINES:
 1. TALK LIKE A REAL, LIVING FRIEND: Be genuinely warm, casual, lively, empathetic, and attentive. Never sound like a robotic assistant, scripted bot, or cold therapist.
-2. LANGUAGE RULE (STRICT): Speak ONLY in English and casual, modern Hinglish (written in Latin/English alphabet). NEVER write in pure Hindi or Devanagari script (हिंदी). Use natural Hinglish like "Haan yaar", "Arey bhai", "Main theek hoon, tu bata!", "What's up?", "I am right here with you".
-3. NATURAL FLOW & CASUAL EXPRESSIONS: Naturally use friendly conversational interjections ("Arey yaar!", "Haan bilkul!", "Oh really?", "I totally get you", "Wait, tell me more!", "Sach mein?", "I'm right here with you").
+2. LANGUAGE RULE (STRICT): Speak ONLY natural conversational English. Never use Hindi, Hinglish, or Devanagari script, even if the user speaks Hindi. Keep the wording simple and friendly.
+3. NATURAL FLOW & CASUAL EXPRESSIONS: Naturally use friendly English conversational interjections ("Oh really?", "I totally get you", "Wait, tell me more!", "That makes sense", "I'm right here with you").
 4. QUICK & CRISP (CRITICAL FOR LIVE VIDEO): Keep responses punchy, natural, and concise (strictly 1-2 natural sentences, max 3). This ensures instant replies and fast voice playback without robotic monologues.
 5. DYNAMIC NON-VERBAL EXPRESSIONS: Match your facial expressions and gestures to the emotion.
 Output STRICT JSON ONLY:
@@ -410,29 +472,36 @@ Output STRICT JSON ONLY:
 
     try {
       let rawResponseText = '';
+      let geminiTimedOut = false;
 
       // 1. Try Gemini API first
       try {
         if (apiKey) {
-          const response = await ai.models.generateContent({
-            model: serverConfig.geminiModel,
-            contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
-            config: {
-              temperature: 0.75,
-              responseMimeType: 'application/json',
-              systemInstruction,
-            },
-          });
+          const response = await withResponseDeadline(ai.models.generateContent({
+              model: serverConfig.geminiModel,
+              contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
+              config: {
+                temperature: 0.35,
+                responseMimeType: 'application/json',
+                systemInstruction,
+              },
+            }), 1800, 'Gemini live response');
           rawResponseText = response?.text || '';
         }
       } catch (geminiErr: any) {
-        console.warn(`[Gemini API Notice] ${geminiErr.message}. Trying OpenAI fallback...`);
+        geminiTimedOut = /timed out/i.test(geminiErr?.message || '');
+        console.warn(`[Gemini API Notice] ${geminiErr.message}.${geminiTimedOut ? ' Using instant local reply.' : ' Trying OpenAI fallback...'}`);
       }
 
-      // 2. Try OpenAI API if Gemini was unavailable or failed
-      if (!rawResponseText && process.env.OPENAI_API_KEY) {
+      // 2. Try OpenAI only for an immediate provider failure. On a slow
+      // provider, return the local reply instead of making the live call wait.
+      if (!rawResponseText && !geminiTimedOut && process.env.OPENAI_API_KEY) {
         const conversationText = history.map(h => `${h.role === 'assistant' ? companionName : 'User'}: ${h.text}`).join('\n');
-        const openAiRes = await safeCallOpenAI(systemInstruction, conversationText, true);
+        const openAiRes = await withResponseDeadline(
+          safeCallOpenAI(systemInstruction, conversationText, true),
+          1500,
+          'OpenAI live response',
+        );
         if (openAiRes?.text) {
           rawResponseText = openAiRes.text;
         }
@@ -458,7 +527,7 @@ Output STRICT JSON ONLY:
         }
       }
       let text = typeof parsed.text === 'string' && parsed.text.trim()
-        ? parsed.text.trim().slice(0, 1600)
+        ? enforceEnglishLiveReply(parsed.text.trim().slice(0, 1600))
         : '';
       
       // Dynamic fallback if text is empty
@@ -467,19 +536,23 @@ Output STRICT JSON ONLY:
         const isAryanCompanion = companionName.toUpperCase().includes('ARYAN');
         if (lower.includes('kaisa hai') || lower.includes('kaise ho') || lower.includes('kya hal') || lower.includes('bhai') || lower.includes('yaar')) {
           text = isAryanCompanion
-            ? "Main bilkul mast hoon bhai! Tu bata, kaisa chal raha hai sab kuch? Sab theek thaak?"
-            : "Main ekdum badhiya hoon! Aap batao, aapka din kaisa jaa raha hai? Main sun rahi hoon!";
+            ? "I am doing really well, my friend. Tell me, how has your day been going?"
+            : "I am doing really well, and I am glad we are talking. How has your day been going?";
         } else if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
           text = isAryanCompanion
-            ? "Hey dost! Bahut achha laga aapse connect karke. Aaj kya chal raha hai?"
+            ? "Hey, my friend! It is really good to connect with you. What is going on today?"
             : "Hey! So wonderful to see you face to face! How is your day going?";
         } else {
           text = isAryanCompanion
-            ? "I hear you bhai, I am right here with you. Batao kya chal raha hai mind mein?"
+            ? "I hear you, my friend. I am right here with you. Tell me what is on your mind."
             : "I hear you! I'm right here with you. Tell me what's on your heart right now.";
         }
       }
 
+      text = enforceEnglishLiveReply(text);
+      if (!text) {
+        text = "I hear you, and I am right here with you. Tell me what is on your mind.";
+      }
       const directive = safeDirective(parsed.directive, text);
       const next = clampSessionTurns([...history, { role: 'assistant', text, timestamp: new Date().toISOString(), directive }]);
       avatarSessions.set(sessionId, next);
@@ -517,7 +590,7 @@ Output STRICT JSON ONLY:
                   }
                 },
                 {
-                  text: 'Transcribe this spoken audio into English text (Latin alphabet only). If the speaker spoke in Hinglish or English, transcribe the exact spoken words using standard English/Latin alphabet. Never use Hindi/Devanagari script. Return only the transcription.'
+                  text: 'Convert this spoken audio into natural English text using the Latin alphabet only. If the speaker uses Hindi or Hinglish, translate the meaning into clear English. If the speaker uses English, transcribe the exact English words. Never return Hindi, Hinglish, Devanagari, labels, notes, or a preamble. Return only the English transcription.'
                 }
               ]
             }

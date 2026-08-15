@@ -59,6 +59,25 @@ function normalizeAlignment(value: any): CharacterAlignment | null {
   };
 }
 
+function chooseBrowserVoice(avatar: Avatar): SpeechSynthesisVoice | null {
+  if (typeof window === 'undefined' || !window.speechSynthesis) return null;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return null;
+  const female = avatar.voice === 'feminine';
+  const preferred = female
+    ? [/samantha/i, /zira/i, /aria/i, /jenny/i, /female/i, /google us english/i]
+    : [/daniel/i, /alex/i, /guy/i, /david/i, /male/i, /google uk english male/i];
+  return preferred.flatMap((pattern) => voices.filter((voice) => pattern.test(voice.name)))
+    .find((voice) => /^en(-|_)/i.test(voice.lang))
+    || voices.find((voice) => /^en(-|_)/i.test(voice.lang) && voice.name.toLowerCase() !== (female ? 'daniel' : 'samantha'))
+    || voices[0];
+}
+
+function isEnglishTranscript(text: string): boolean {
+  return !/[\u0900-\u097F]/.test(text)
+    && !/\b(?:arey|arre|haan|bhai|yaar|aur batao|batao|aap|kya|kaise|kaisa|hoon|theek)\b/i.test(text);
+}
+
 export default function LiveAvatarWorkspace() {
   const [selectedAvatarId, setSelectedAvatarId] = useState(() => {
     return localStorage.getItem('sanctuary_selected_avatar_id') || 'ema';
@@ -109,7 +128,7 @@ export default function LiveAvatarWorkspace() {
     audioSource: 'idle',
   });
   const [ttsStatus, setTtsStatus] = useState('idle');
-  const [speechLang, setSpeechLang] = useState<'en-IN' | 'en-US'>('en-IN');
+  const [speechLang, setSpeechLang] = useState<'en-IN' | 'en-US'>('en-US');
 
   const selfVideoRef = useRef<HTMLVideoElement>(null);
   const camStreamRef = useRef<MediaStream | null>(null);
@@ -128,7 +147,7 @@ export default function LiveAvatarWorkspace() {
 
   const transcribeRecording = useCallback(async (fallback: string) => {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state === 'inactive') return fallback;
+    if (!recorder || recorder.state === 'inactive') return isEnglishTranscript(fallback) ? fallback : '';
     const audioBlob = await new Promise<Blob>((resolve) => {
       recorder.onstop = () => resolve(new Blob(recorderChunksRef.current, { type: recorder.mimeType || 'audio/webm' }));
       recorder.stop();
@@ -143,12 +162,15 @@ export default function LiveAvatarWorkspace() {
       });
       if (response.ok) {
         const data = await response.json();
-        if (typeof data?.text === 'string' && data.text.trim()) return data.text.trim();
+        if (typeof data?.text === 'string' && data.text.trim()) {
+          const translated = data.text.trim();
+          return isEnglishTranscript(translated) ? translated : '';
+        }
       }
     } catch (error) {
       console.warn('[SpeechRec] server transcription unavailable:', error);
     }
-    return fallback;
+    return isEnglishTranscript(fallback) ? fallback : '';
   }, []);
 
   // Fresh mutable refs for async event handlers
@@ -285,6 +307,7 @@ export default function LiveAvatarWorkspace() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             text: spokenText,
+            avatarId: currentAvatar.id,
             voiceId: currentAvatar.voiceId,
             includeTimestamps: true,
           }),
@@ -310,7 +333,12 @@ export default function LiveAvatarWorkspace() {
         avatarEngine.setSpeechTimeline(timeline);
         avatarEngine.setState('speaking');
         setTtsStatus(`elevenlabs-ready${alignment ? '-aligned' : '-fallback-timing'}`);
-        await audioController.playAudioBlob(blob);
+        const playback = await audioController.playAudioBlob(blob);
+        // ElevenLabs audio duration is authoritative. Rebuild the fallback
+        // timeline after playback starts so lips stay locked to real audio.
+        if (!alignment && playback.duration > 0) {
+          avatarEngine.setSpeechTimeline(createVisemeTimeline(spokenText, playback.duration));
+        }
       } catch (error) {
         console.warn('[LiveAvatar TTS] ElevenLabs fallback to browser voice synthesis:', error);
         setTtsStatus('browser-speech-fallback');
@@ -319,8 +347,8 @@ export default function LiveAvatarWorkspace() {
         if (typeof window !== 'undefined' && window.speechSynthesis) {
           window.speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(spokenText);
-          const isHindiText = /[\u0900-\u097F]|(?:kaisa|kaise|yaar|bhai|tu|aaj|kya|hoon|theek|bata|suno|kuch)/i.test(spokenText);
-          utterance.lang = isHindiText ? 'hi-IN' : 'en-IN';
+          utterance.lang = isAisha ? 'en-US' : 'en-IN';
+          utterance.voice = chooseBrowserVoice(currentAvatar);
           utterance.rate = 0.98;
           utterance.pitch = isAisha ? 1.12 : 0.92;
 
@@ -328,12 +356,20 @@ export default function LiveAvatarWorkspace() {
           const timeline = createVisemeTimeline(spokenText, dur);
           avatarEngine.setSpeechTimeline(timeline);
           avatarEngine.setState('speaking');
+          // Keep the GLB/VRM mouth animation alive even when ElevenLabs is
+          // unavailable and browser speech is used as the audio fallback.
+          audioController.startSyntheticPlayback(dur, () => {
+            avatarEngine.clearSpeechTimeline();
+            avatarEngine.setState('idle');
+          });
 
           utterance.onend = () => {
+            audioController.interrupt();
             avatarEngine.clearSpeechTimeline();
             avatarEngine.setState('idle');
           };
           utterance.onerror = () => {
+            audioController.interrupt();
             avatarEngine.clearSpeechTimeline();
             avatarEngine.setState('idle');
           };
@@ -393,7 +429,8 @@ export default function LiveAvatarWorkspace() {
           message: trimmed,
           settings: {
             name: currentAvatar.name,
-            language: 'English or Hinglish',
+            language: 'English',
+            avatarId: currentAvatar.id,
             personality: currentAvatar.personality,
             voice: currentAvatar.voice,
             accent: currentAvatar.accent,
@@ -506,16 +543,32 @@ export default function LiveAvatarWorkspace() {
 
           if (interimStr.trim() && !audioController.isPlaying()) {
             avatarEngine.setState('listening');
-            setLiveCaption({ speaker: 'you', text: interimStr.trim(), isInterim: true });
+            // Never expose raw browser recognition text: it can be Hindi or
+            // incorrect. The committed line comes from the server transcript.
+            setLiveCaption({ speaker: 'you', text: 'Listening…', isInterim: true });
           }
 
-          // Instant dispatch on final speech transcript (zero waiting)
-          if (finalStr.trim() && !audioController.isPlaying() && !isSendingRef.current) {
+          // Use the browser result only to detect an utterance boundary. The
+          // recorded audio is sent to Gemini/Whisper before the turn is sent.
+          if (finalStr.trim() && !audioController.isPlaying() && !isSendingRef.current && !transcribingRef.current) {
             const browserTranscript = finalStr.trim();
-            console.info('[SpeechRec] Instant final transcript:', browserTranscript);
-            setLiveCaption({ speaker: 'you', text: browserTranscript, isInterim: false });
-            void handleSendUserMessage(browserTranscript);
-            restart(100);
+            transcribingRef.current = true;
+            console.info('[SpeechRec] browser boundary detected:', browserTranscript);
+            setLiveCaption({ speaker: 'you', text: 'Processing…', isInterim: true });
+            // Prefer the accurate server transcript, but never make the user
+            // wait for a slow model/network round-trip before replying.
+            const browserFallback = isEnglishTranscript(browserTranscript) ? browserTranscript : '';
+            const transcriptDeadline = browserFallback ? 700 : 2500;
+            const fastTranscript = Promise.race<string>([
+              transcribeRecording(browserTranscript),
+              new Promise<string>((resolve) => window.setTimeout(() => resolve(browserFallback), transcriptDeadline)),
+            ]);
+            void fastTranscript.then((transcript) => {
+              if (transcript && !audioController.isPlaying()) void handleSendUserMessage(transcript);
+            }).finally(() => {
+              transcribingRef.current = false;
+              restart(150);
+            });
           }
         };
 
