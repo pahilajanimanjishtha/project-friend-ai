@@ -109,7 +109,7 @@ export default function LiveAvatarWorkspace() {
     audioSource: 'idle',
   });
   const [ttsStatus, setTtsStatus] = useState('idle');
-  const [speechLang, setSpeechLang] = useState<'hi-IN' | 'en-IN'>('hi-IN');
+  const [speechLang, setSpeechLang] = useState<'en-IN' | 'en-US'>('en-IN');
 
   const selfVideoRef = useRef<HTMLVideoElement>(null);
   const camStreamRef = useRef<MediaStream | null>(null);
@@ -650,7 +650,7 @@ export default function LiveAvatarWorkspace() {
           <div className="flex items-center gap-2.5">
             <button
               onClick={() => {
-                const next = speechLang === 'hi-IN' ? 'en-IN' : 'hi-IN';
+                const next = speechLang === 'en-IN' ? 'en-US' : 'en-IN';
                 setSpeechLang(next);
                 if (recognitionRef.current) {
                   try {
@@ -658,11 +658,11 @@ export default function LiveAvatarWorkspace() {
                   } catch {}
                 }
               }}
-              title="Click to toggle between Hindi/Hinglish and English speech recognition"
+              title="Click to toggle English input mode"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black/60 hover:bg-black/90 border border-white/15 text-[11px] font-mono font-semibold text-cyan-300 transition-all cursor-pointer shadow-sm"
             >
               <span>🌐</span>
-              <span>{speechLang === 'hi-IN' ? 'Hindi / Hinglish' : 'English'}</span>
+              <span>{speechLang === 'en-IN' ? 'English (India)' : 'English (US)'}</span>
             </button>
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-xs font-mono text-slate-300">
               <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />

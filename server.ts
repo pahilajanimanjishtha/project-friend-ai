@@ -355,8 +355,11 @@ async function startServer() {
       }
 
       const audioBuffer = await elevenRes.arrayBuffer();
-      res.setHeader('Content-Type', 'audio/mpeg');
-      return res.send(Buffer.from(audioBuffer));
+      const base64 = Buffer.from(audioBuffer).toString('base64');
+      return res.json({
+        audioBase64: base64,
+        audioMime: 'audio/mpeg',
+      });
     } catch (err: any) {
       console.error('[TTS Exception]', err);
       return res.status(500).json({ error: 'TTS service error.' });
@@ -514,7 +517,7 @@ Output STRICT JSON ONLY:
                   }
                 },
                 {
-                  text: 'Transcribe this spoken audio verbatim into text accurately. If it is in Hindi, Hinglish, or English, transcribe the exact spoken words without adding translation, notes, or preamble. Return only the transcription.'
+                  text: 'Transcribe this spoken audio into English text (Latin alphabet only). If the speaker spoke in Hinglish or English, transcribe the exact spoken words using standard English/Latin alphabet. Never use Hindi/Devanagari script. Return only the transcription.'
                 }
               ]
             }
