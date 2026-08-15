@@ -39,6 +39,7 @@ import {
   X,
 } from 'lucide-react';
 import { CRISIS_HELPLINES, type Helpline } from '../lib/crisisSafetyFilter';
+import { getAvatarById } from '../avatars';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -92,11 +93,15 @@ function detectCrisisClient(text: string): CrisisState | null {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-async function createConversation(): Promise<{
+async function createConversation(avatarId?: string): Promise<{
   conversation_url: string;
   conversation_id: string;
 }> {
-  const r = await fetch('/api/conversations', { method: 'POST' });
+  const r = await fetch('/api/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ avatarId }),
+  });
   if (!r.ok) {
     const e = await r.json().catch(() => ({}));
     throw new Error(
@@ -144,6 +149,11 @@ const START_MODES: {
 ];
 
 export default function TavusCallView() {
+  const [selectedAvatarId] = useState(() => {
+    return localStorage.getItem('sanctuary_selected_avatar_id') || 'ema';
+  });
+  const currentAvatar = getAvatarById(selectedAvatarId);
+
   // ─── Call state ───────────────────────────────────────────────────────
   const [status, setStatus] = useState<CallStatus>('idle');
   const [mode, setMode] = useState<StartMode>('video');
@@ -312,8 +322,10 @@ export default function TavusCallView() {
       const wantVideo = chosen === 'video';
 
       try {
+        const activeAvatarId = localStorage.getItem('sanctuary_selected_avatar_id') || selectedAvatarId || 'ema';
+        const activeAvatar = getAvatarById(activeAvatarId);
         const { conversation_url, conversation_id } =
-          await createConversation();
+          await createConversation(activeAvatar.id);
 
         const call = Daily.createCallObject({
           audioSource: wantAudio,
@@ -323,11 +335,16 @@ export default function TavusCallView() {
         callRef.current = call;
 
         // ── Track routing ───────────────────────────────────────────────
+        call.on('participant-joined', (event: any) => {
+          console.info('[TAVUS CVI] PARTICIPANT JOINED:', event?.participant?.user_name || event?.participant?.session_id, event);
+        });
+
         call.on('track-started', (event: any) => {
           const track = event?.track;
           if (!track) return;
 
           if (event.participant?.local) {
+            console.info('[TAVUS CVI] LOCAL USER TRACK STARTED:', track.kind);
             // Local user camera → PiP
             if (track.kind === 'video' && selfVideoRef.current) {
               selfVideoRef.current.srcObject = new MediaStream([track]);
@@ -337,10 +354,12 @@ export default function TavusCallView() {
 
           // Remote (Tavus avatar) tracks
           if (track.kind === 'video' && avatarVideoRef.current) {
+            console.info('[TAVUS CVI] TAVUS REMOTE VIDEO TRACK RECEIVED & ATTACHED:', track.id);
             avatarVideoRef.current.srcObject = new MediaStream([track]);
             setStatus('live');
           }
           if (track.kind === 'audio' && audioRef.current) {
+            console.info('[TAVUS CVI] TAVUS REPLICA AUDIO START:', track.id);
             audioRef.current.srcObject = new MediaStream([track]);
           }
         });
@@ -352,6 +371,8 @@ export default function TavusCallView() {
             selfVideoRef.current
           ) {
             selfVideoRef.current.srcObject = null;
+          } else if (!event?.participant?.local) {
+            console.info('[TAVUS CVI] TAVUS REPLICA AUDIO/VIDEO STOP:', event?.track?.kind);
           }
         });
 
@@ -368,6 +389,7 @@ export default function TavusCallView() {
 
           if (type === 'conversation.utterance.streaming' && text) {
             const speaker = role === 'replica' ? 'nova' : 'you';
+            console.info(`[TAVUS CVI] ${speaker === 'you' ? 'USER SPEAKING' : 'TAVUS REPLICA SPEAKING'} (streaming):`, text);
             setCaption({ role: speaker, text });
             if (speaker === 'you') triggerCrisis(text);
             return;
@@ -375,13 +397,17 @@ export default function TavusCallView() {
 
           if (type === 'conversation.utterance' && text) {
             const speaker = role === 'replica' ? 'nova' : 'you';
+            console.info(`[TAVUS CVI] ${speaker === 'you' ? 'USER TRANSCRIPT' : 'TAVUS RESPONSE RECEIVED'}:`, text);
             setCaption({ role: speaker, text });
             addLine(speaker, text);
             if (speaker === 'you') triggerCrisis(text);
           }
         });
 
-        call.on('left-meeting', () => cleanup());
+        call.on('left-meeting', () => {
+          console.info('[TAVUS CVI] LEFT MEETING');
+          cleanup();
+        });
 
         conversationIdRef.current = conversation_id;
         await call.join({ url: conversation_url });
@@ -454,8 +480,10 @@ export default function TavusCallView() {
               sessionId: sessionIdRef.current,
               message: text,
               settings: {
+                name: currentAvatar.name,
                 language: 'English',
-                personality: 'Warm, friendly, and engaging everyday AI companion',
+                personality: currentAvatar.personality,
+                systemPrompt: currentAvatar.systemPrompt,
               },
             }),
           });
@@ -490,6 +518,7 @@ export default function TavusCallView() {
       {/* ── Idle / Error / Ended screen ─────────────────────────────── */}
       {!isLive && (
         <WelcomeScreen
+          currentAvatar={currentAvatar}
           status={status}
           error={error}
           onStart={start}
@@ -557,7 +586,7 @@ export default function TavusCallView() {
               <div className="meet-stage-top">
                 <div className="meet-name-badge">
                   <span className="meet-badge-dot" />
-                  Nova
+                  {currentAvatar.name}
                   <span className="meet-badge-sub">
                     &nbsp;· AI companion
                   </span>
@@ -594,7 +623,7 @@ export default function TavusCallView() {
                   aria-live="polite"
                 >
                   <Captions size={14} className="meet-caption-icon" />
-                  <b>{caption.role === 'nova' ? 'Nova' : 'You'}</b>
+                  <b>{caption.role === 'nova' ? currentAvatar.name : 'You'}</b>
                   <span>{caption.text}</span>
                 </div>
               )}
@@ -642,7 +671,7 @@ export default function TavusCallView() {
                           className={`meet-msg meet-msg--${line.role}`}
                         >
                           <span>
-                            {line.role === 'nova' ? 'Nova' : 'You'}
+                            {line.role === 'nova' ? currentAvatar.name : 'You'}
                           </span>
                           <p>{line.text}</p>
                         </article>
@@ -655,8 +684,8 @@ export default function TavusCallView() {
                     <input
                       value={draft}
                       onChange={(e) => setDraft(e.target.value)}
-                      placeholder="Type a message to Nova…"
-                      aria-label="Type a message to Nova"
+                      placeholder={`Type a message to ${currentAvatar.name}…`}
+                      aria-label={`Type a message to ${currentAvatar.name}`}
                     />
                     <button
                       type="submit"
@@ -719,11 +748,13 @@ export default function TavusCallView() {
 // ── Welcome / Idle / Error / Ended screen ────────────────────────────────────
 
 function WelcomeScreen({
+  currentAvatar,
   status,
   error,
   onStart,
   onRestart,
 }: {
+  currentAvatar: any;
   status: CallStatus;
   error: string;
   onStart: (m: StartMode) => void;
@@ -740,7 +771,7 @@ function WelcomeScreen({
           <em>of yourself.</em>
         </h1>
         <p className="tavus-copy">
-          Your conversation with Nova has ended. You can start a new session whenever you are ready.
+          Your conversation with {currentAvatar.name} has ended. You can start a new session whenever you are ready.
         </p>
         <button className="tavus-restart-btn" onClick={onRestart}>
           Start a new session
@@ -762,8 +793,8 @@ function WelcomeScreen({
         <em>face to face.</em>
       </h1>
       <p className="tavus-copy">
-        Nova listens without judgment, helps you slow down, and stays within
-        non-clinical emotional support. Your camera and microphone stay in your control.
+        {currentAvatar.name} listens without judgment, helps you slow down, and stays within
+        supportive conversation. Your camera and microphone stay in your control.
       </p>
 
       <div className="tavus-modes">

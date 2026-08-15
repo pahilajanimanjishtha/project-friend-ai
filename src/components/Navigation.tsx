@@ -3,7 +3,7 @@ import React from 'react';
 import { 
   Menu, X, Sparkles, Layout, MessageSquare, Presentation, User, Sun, Moon, 
   PenTool, Music, ChevronDown, BarChart3, Mail, Users, HeartPulse, 
-  ShieldCheck, BookOpen, Cloud, Pill, Video, Volume2, VolumeX, Headphones, Sliders, TrendingUp, StickyNote, Wind, Brain
+  ShieldCheck, BookOpen, Cloud, Pill, Video, Volume2, VolumeX, Headphones, Sliders, TrendingUp, StickyNote, Wind, Brain, Palette
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -178,6 +178,7 @@ export default function Navigation({
 
   const abilities = [
     { id: 'chat', label: '🎥 HeyGen Live Video Call', icon: Video, description: 'Real-time studio HD video companion call with HeyGen Avatar' },
+    { id: 'customize', label: '🎭 Customize Your Avatar', icon: Palette, description: 'Choose your companion avatar, voice style, and gesture personality' },
     { id: 'sanctuary', label: '💬 AI Companion Sanctuary Chat', icon: MessageSquare, description: 'Private AI companion chat with specialized listening archetypes' },
     { id: 'somatic-reset', label: '🧘 Somatic Reset (5-4-3-2-1)', icon: Wind, description: '5-4-3-2-1 sensory grounding & box breathing pacer' },
     { id: 'cbt-reframe', label: '🧠 CBT Reframe & Unburden', icon: Brain, description: 'Spot unhelpful thoughts & formulate reframes' },
@@ -301,6 +302,17 @@ export default function Navigation({
               </div>
             )}
           </div>
+
+          {/* Customize Avatar */}
+          <button
+            onClick={() => handleLinkClick('customize')}
+            className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] font-semibold transition-colors cursor-pointer ${
+              currentView === 'customize' ? 'text-periwinkle' : 'text-sage hover:text-white'
+            }`}
+          >
+            <Palette className="w-3.5 h-3.5" />
+            Customize
+          </button>
 
           {/* Vision & Mission */}
           <button

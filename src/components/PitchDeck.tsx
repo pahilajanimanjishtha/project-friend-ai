@@ -3,7 +3,11 @@ import React from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Presentation, Target, Sparkles, TrendingUp, Layers, Award } from 'lucide-react';
 
-export default function PitchDeck() {
+interface PitchDeckProps {
+  isLightMode?: boolean;
+}
+
+export default function PitchDeck({ isLightMode }: PitchDeckProps = {}) {
   const [currentSlide, setCurrentSlide] = useState(0);
 
   const slides = [

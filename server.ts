@@ -387,9 +387,23 @@ async function startServer() {
     }
     // ──────────────────────────────────────────────────────────────────
 
-    const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English';
-    const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 100) : 'Warm, friendly, and engaging everyday AI companion';
-    const systemInstruction = `You are Nova, a warm and friendly AI companion in Friend AI. Talk casually, warmly, and empathetically like a close friend who helps others feel light, happy, and listened to. You are NOT a medical assistant, interviewer, or doctor, and you never conduct medical interviews or give medical advice. Reply in ${language} (2–4 short friendly sentences). Return JSON only: {"text":"...","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking"}}.`;
+    const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English or Hinglish';
+    const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 200) : 'warm, authentic, and caring close friend in Friend AI';
+    const companionName = typeof settings.name === 'string' ? settings.name.slice(0, 50) : 'Aryan';
+    const basePrompt = typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim()
+      ? settings.systemPrompt.slice(0, 700)
+      : `You are ${companionName}, a ${personality}. Talk warmly, naturally, authentically, and casually like a close, caring friend.`;
+    const systemInstruction = `${basePrompt}
+You are talking live face-to-face with your friend inside Friend AI.
+
+CORE HUMAN VIBE & GUIDELINES:
+1. TALK LIKE A REAL, LIVING FRIEND: Be genuinely warm, casual, lively, empathetic, and attentive. Never sound like a robotic assistant, scripted bot, or cold therapist.
+2. LANGUAGE RULE (STRICT): Speak ONLY in English and casual, modern Hinglish (written in Latin/English alphabet). NEVER write in pure Hindi or Devanagari script (हिंदी). Use natural Hinglish like "Haan yaar", "Arey bhai", "Main theek hoon, tu bata!", "What's up?", "I am right here with you".
+3. NATURAL FLOW & CASUAL EXPRESSIONS: Naturally use friendly conversational interjections ("Arey yaar!", "Haan bilkul!", "Oh really?", "I totally get you", "Wait, tell me more!", "Sach mein?", "I'm right here with you").
+4. QUICK & CRISP (CRITICAL FOR LIVE VIDEO): Keep responses punchy, natural, and concise (strictly 1-2 natural sentences, max 3). This ensures instant replies and fast voice playback without robotic monologues.
+5. DYNAMIC NON-VERBAL EXPRESSIONS: Match your facial expressions and gestures to the emotion.
+Output STRICT JSON ONLY:
+{"text":"...","emotion":"happy|warm|caring|reflective|concerned|celebratory|playful|neutral","intensity":0.85,"gesture":"idle|nod|small_wave|hand_heart|thinking|open_palms|shrug|tilt_head|listen_lean","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned|playful","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking|small-wave|shrug|tilt-head|listen-lean"}}`;
 
     try {
       let rawResponseText = '';
@@ -401,7 +415,7 @@ async function startServer() {
             model: serverConfig.geminiModel,
             contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
             config: {
-              temperature: 0.65,
+              temperature: 0.75,
               responseMimeType: 'application/json',
               systemInstruction,
             },
@@ -414,18 +428,55 @@ async function startServer() {
 
       // 2. Try OpenAI API if Gemini was unavailable or failed
       if (!rawResponseText && process.env.OPENAI_API_KEY) {
-        const conversationText = history.map(h => `${h.role === 'assistant' ? 'Nova' : 'User'}: ${h.text}`).join('\n');
+        const conversationText = history.map(h => `${h.role === 'assistant' ? companionName : 'User'}: ${h.text}`).join('\n');
         const openAiRes = await safeCallOpenAI(systemInstruction, conversationText, true);
         if (openAiRes?.text) {
           rawResponseText = openAiRes.text;
         }
       }
 
-      let parsed: any;
-      try { parsed = JSON.parse(rawResponseText || '{}'); } catch { parsed = { text: rawResponseText || '' }; }
-      const text = typeof parsed.text === 'string' && parsed.text.trim()
+      let parsed: any = {};
+      try {
+        let cleanText = (rawResponseText || '').trim();
+        cleanText = cleanText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
+        const firstBrace = cleanText.indexOf('{');
+        const lastBrace = cleanText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+        }
+        parsed = JSON.parse(cleanText);
+      } catch {
+        const match = (rawResponseText || '').match(/"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+        if (match) {
+          parsed = { text: match[1].replace(/\\"/g, '"').replace(/\\n/g, ' ') };
+        } else {
+          const stripped = (rawResponseText || '').replace(/[{}"]/g, '').replace(/directive:.*$/i, '').trim();
+          parsed = { text: stripped };
+        }
+      }
+      let text = typeof parsed.text === 'string' && parsed.text.trim()
         ? parsed.text.trim().slice(0, 1600)
-        : "Hey! I'm so glad you sent a message. What's on your mind today?";
+        : '';
+      
+      // Dynamic fallback if text is empty
+      if (!text) {
+        const lower = message.toLowerCase().trim();
+        const isAryanCompanion = companionName.toUpperCase().includes('ARYAN');
+        if (lower.includes('kaisa hai') || lower.includes('kaise ho') || lower.includes('kya hal') || lower.includes('bhai') || lower.includes('yaar')) {
+          text = isAryanCompanion
+            ? "Main bilkul mast hoon bhai! Tu bata, kaisa chal raha hai sab kuch? Sab theek thaak?"
+            : "Main ekdum badhiya hoon! Aap batao, aapka din kaisa jaa raha hai? Main sun rahi hoon!";
+        } else if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
+          text = isAryanCompanion
+            ? "Hey dost! Bahut achha laga aapse connect karke. Aaj kya chal raha hai?"
+            : "Hey! So wonderful to see you face to face! How is your day going?";
+        } else {
+          text = isAryanCompanion
+            ? "I hear you bhai, I am right here with you. Batao kya chal raha hai mind mein?"
+            : "I hear you! I'm right here with you. Tell me what's on your heart right now.";
+        }
+      }
+
       const directive = safeDirective(parsed.directive, text);
       const next = clampSessionTurns([...history, { role: 'assistant', text, timestamp: new Date().toISOString(), directive }]);
       avatarSessions.set(sessionId, next);
@@ -438,42 +489,72 @@ async function startServer() {
     }
   });
 
-  // Whisper Speech-to-Text Transcription Endpoint
+  // Speech-to-Text Transcription Endpoint (Gemini multimodal audio with Whisper fallback)
   app.post('/api/transcribe', express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/wav', 'audio/mp4'], limit: '25mb' }), async (req, res) => {
     if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'Audio payload is required.' });
     }
-    const openAiKey = process.env.OPENAI_API_KEY;
-    if (!openAiKey) {
-      return res.status(501).json({ providerRequired: true, error: 'Set OPENAI_API_KEY to enable server-side Whisper transcription.' });
-    }
-    try {
-      const mimeType = (req.headers['content-type'] as string) || 'audio/webm';
-      const ext = mimeType.includes('mp4') ? 'mp4' : mimeType.includes('wav') ? 'wav' : mimeType.includes('ogg') ? 'ogg' : 'webm';
-      
-      const formData = new FormData();
-      const audioBlob = new Blob([req.body], { type: mimeType });
-      formData.append('file', audioBlob, `audio.${ext}`);
-      formData.append('model', 'whisper-1');
+    const mimeType = (req.headers['content-type'] as string) || 'audio/webm';
+    const cleanMime = mimeType.split(';')[0].trim();
 
-      const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${openAiKey}` },
-        body: formData,
-      });
-
-      if (!whisperRes.ok) {
-        const errText = await whisperRes.text();
-        console.warn('[Whisper API Error]', whisperRes.status, errText);
-        return res.status(502).json({ error: 'Whisper transcription failed.' });
+    // 1. Try Gemini Multimodal Transcription First (Fast, accurate, handles Hinglish & English)
+    if (apiKey) {
+      try {
+        const audioBase64 = req.body.toString('base64');
+        const geminiRes = await ai.models.generateContent({
+          model: serverConfig.geminiModel,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMime,
+                    data: audioBase64,
+                  }
+                },
+                {
+                  text: 'Transcribe this spoken audio verbatim into text accurately. If it is in Hindi, Hinglish, or English, transcribe the exact spoken words without adding translation, notes, or preamble. Return only the transcription.'
+                }
+              ]
+            }
+          ]
+        });
+        const transcribed = geminiRes?.text?.trim() || '';
+        if (transcribed) {
+          return res.json({ text: transcribed });
+        }
+      } catch (geminiErr: any) {
+        console.warn('[Gemini Transcribe Notice]', geminiErr?.message);
       }
-
-      const data: any = await whisperRes.json();
-      return res.json({ text: data.text || '' });
-    } catch (err: any) {
-      console.error('[Transcribe Error]', err);
-      return res.status(500).json({ error: 'Transcription service error.' });
     }
+
+    // 2. Fallback to OpenAI Whisper if OPENAI_API_KEY is available
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (openAiKey) {
+      try {
+        const ext = cleanMime.includes('mp4') ? 'mp4' : cleanMime.includes('wav') ? 'wav' : cleanMime.includes('ogg') ? 'ogg' : 'webm';
+        const formData = new FormData();
+        const audioBlob = new Blob([req.body], { type: cleanMime });
+        formData.append('file', audioBlob, `audio.${ext}`);
+        formData.append('model', 'whisper-1');
+
+        const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openAiKey}` },
+          body: formData,
+        });
+
+        if (whisperRes.ok) {
+          const data: any = await whisperRes.json();
+          return res.json({ text: data.text || '' });
+        }
+      } catch (err: any) {
+        console.warn('[Whisper API Notice]', err?.message);
+      }
+    }
+
+    return res.status(200).json({ text: '' });
   });
 
   // Persona fallback response generator when API key is invalid/unauthenticated or offline
@@ -558,7 +639,7 @@ async function startServer() {
         httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
       });
 
-      const modelsToTry = [serverConfig.geminiModel, 'gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-2.5-pro'];
+      const modelsToTry = [serverConfig.geminiModel, 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-pro'];
 
       for (const modelName of modelsToTry) {
         try {
@@ -646,6 +727,7 @@ You are a supportive friend — NOT a doctor, therapist, medical assistant, or i
 
 Guidelines:
 - Talk like a real, caring friend in simple, friendly, natural words.
+- LANGUAGE: Speak ONLY in English or casual, modern Hinglish (written in standard Latin/English alphabet, e.g., "Haan yaar", "Kya chal raha hai?", "I am here with you"). NEVER use Devanagari Hindi script (हिंदी).
 - Keep replies brief (2 to 4 sentences) and respond directly to what the user shared.
 - Never claim to be a medical assistant, doctor, clinician, or interviewer.`;
 
@@ -807,19 +889,35 @@ Provide a clear analysis with the following sections in your response:
 
 Ensure the tone is warm, holding, and clinical but accessible. Respond in beautiful, styled Markdown formatting.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: {
-          parts: [
-            { text: "Please analyze my prescription and guide me accordingly:" },
-            { inlineData: { data: image.data, mimeType: image.mimeType || 'image/jpeg' } }
-          ]
-        },
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.4
+      // Try available multimodal models
+      const modelsToTry = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+      let response: any = null;
+      let lastErr: any = null;
+
+      for (const m of modelsToTry) {
+        try {
+          response = await ai.models.generateContent({
+            model: m,
+            contents: {
+              parts: [
+                { text: "Please analyze my prescription and guide me accordingly:" },
+                { inlineData: { data: image.data, mimeType: image.mimeType || 'image/jpeg' } }
+              ]
+            },
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.4
+            }
+          });
+          if (response && response.text) break;
+        } catch (e: any) {
+          lastErr = e;
         }
-      });
+      }
+
+      if (!response || !response.text) {
+        throw lastErr || new Error('Prescription analysis model unreachable');
+      }
 
       addLog('POST /api/analyze-prescription', { mimeType: image.mimeType }, 'success', 'Prescription analyzed successfully');
       res.json({ text: response.text });
@@ -830,7 +928,7 @@ Ensure the tone is warm, holding, and clinical but accessible. Respond in beauti
     }
   });
 
-  // Video Sanctuary Analysis using gemini-3.1-pro-preview
+  // Video Sanctuary Analysis with multi-model fallback
   app.post('/api/analyze-video', async (req, res) => {
     try {
       const { archetype, videoFile } = req.body;
@@ -853,14 +951,29 @@ Describe:
 
 Write in a deeply restorative, therapeutic tone. Use structured Markdown.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: contentsParts,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.6
+      const modelsToTry = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+      let response: any = null;
+      let lastErr: any = null;
+
+      for (const m of modelsToTry) {
+        try {
+          response = await ai.models.generateContent({
+            model: m,
+            contents: contentsParts,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.6
+            }
+          });
+          if (response && response.text) break;
+        } catch (e: any) {
+          lastErr = e;
         }
-      });
+      }
+
+      if (!response || !response.text) {
+        throw lastErr || new Error('Video analysis model unreachable');
+      }
 
       addLog('POST /api/analyze-video', { archetype, hasVideoFile: !!videoFile }, 'success', 'Video sanctuary analyzed successfully');
       res.json({ text: response.text });

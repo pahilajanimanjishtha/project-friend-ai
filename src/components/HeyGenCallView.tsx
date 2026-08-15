@@ -11,6 +11,7 @@ import {
   Camera, CameraOff, Mic, MicOff, Phone, PhoneOff, Send, Shield, MessageSquareText, Sparkles, Video, AlertTriangle, X
 } from 'lucide-react';
 import { CRISIS_HELPLINES, type Helpline } from '../lib/crisisSafetyFilter';
+import { getAvatarById } from '../avatars';
 
 type CallStatus = 'idle' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -22,6 +23,11 @@ interface TranscriptLine {
 }
 
 export default function HeyGenCallView() {
+  const [currentAvatar] = useState(() => {
+    const saved = localStorage.getItem('sanctuary_selected_avatar_id') || 'ema';
+    return getAvatarById(saved);
+  });
+
   const [status, setStatus] = useState<CallStatus>('idle');
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -192,7 +198,7 @@ export default function HeyGenCallView() {
       setStatus('live');
 
       // Send initial greeting
-      const greeting = "Hey there! I am Nova, your companion in Friend AI powered by HeyGen. It's so wonderful to talk to you!";
+      const greeting = `Hey there! I am ${currentAvatar.name}, your companion in Friend AI powered by HeyGen. It's so wonderful to talk to you!`;
       setLines([{ id: '1', role: 'nova', text: greeting, timestamp: Date.now() }]);
       await speakAvatarText(greeting);
 
@@ -248,6 +254,12 @@ export default function HeyGenCallView() {
         body: JSON.stringify({
           sessionId: sessionIdRef.current || 'heygen_session',
           message: userMsg,
+          settings: {
+            name: currentAvatar.name,
+            voice: currentAvatar.voice,
+            accent: currentAvatar.accent,
+            personality: currentAvatar.personality
+          }
         }),
       });
       const data = await res.json();
@@ -318,7 +330,7 @@ export default function HeyGenCallView() {
               HEYGEN INTERACTIVE STREAMING ENGINE
             </span>
             <h1 className="font-serif text-3xl md:text-4xl font-bold tracking-tight text-white">
-              Connect with Nova's Live Studio Avatar
+              Connect with {currentAvatar.name}'s Live Studio Avatar
             </h1>
             <p className="text-sm text-sage leading-relaxed">
               Experience studio-quality HD video streaming with real-time lip synchronization, natural voice, and empathetic presence.
@@ -420,9 +432,9 @@ export default function HeyGenCallView() {
               </div>
 
               <div className="mt-6 text-center space-y-1">
-                <h3 className="font-serif text-lg font-bold text-white tracking-wide">Nova • HeyGen Interactive Companion</h3>
+                <h3 className="font-serif text-lg font-bold text-white tracking-wide">{currentAvatar.name} • HeyGen Interactive Companion</h3>
                 <p className="text-xs font-mono text-[#c9a45c]">
-                  {avatarSpeaking ? '🎙️ Nova Speaking…' : micOn ? '🎙️ Listening to you…' : '⏸️ Muted'}
+                  {avatarSpeaking ? `🎙️ ${currentAvatar.name} Speaking…` : micOn ? '🎙️ Listening to you…' : '⏸️ Muted'}
                 </p>
               </div>
             </div>
@@ -431,7 +443,7 @@ export default function HeyGenCallView() {
             {avatarSpeaking && (
               <div className="absolute top-4 left-4 bg-black/70 backdrop-blur-md border border-[#c9a45c]/40 text-[#c9a45c] px-3 py-1 rounded-full text-[10px] font-mono font-bold uppercase flex items-center gap-2 z-20">
                 <span className="w-2 h-2 rounded-full bg-[#c9a45c] animate-ping" />
-                Nova Speaking…
+                {currentAvatar.name} Speaking…
               </div>
             )}
 
@@ -490,7 +502,7 @@ export default function HeyGenCallView() {
                   }`}
                 >
                   <span className="block text-[9px] font-mono font-bold uppercase tracking-widest text-[#c9a45c] mb-1">
-                    {l.role === 'you' ? 'You' : 'Nova Avatar'}
+                    {l.role === 'you' ? 'You' : currentAvatar.name}
                   </span>
                   <p className="leading-relaxed">{l.text}</p>
                 </div>
@@ -504,7 +516,7 @@ export default function HeyGenCallView() {
                 type="text"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
-                placeholder="Type a message to Nova…"
+                placeholder={`Type a message to ${currentAvatar.name}…`}
                 className="flex-1 bg-stone-900 border border-stone-700/60 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#c9a45c]"
               />
               <button

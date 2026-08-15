@@ -18,6 +18,9 @@ import Waitlist from './components/Waitlist';
 import PrivacyPolicy from './components/PrivacyPolicy';
 import ChurnDashboard from './components/ChurnDashboard';
 import AvatarCallWorkspace from './components/AvatarCallWorkspace';
+import AvatarCustomize from './components/AvatarCustomize';
+import LiveAvatarWorkspace from './components/LiveAvatarWorkspace';
+import HeyGenCallView from './components/HeyGenCallView';
 import TavusCallView from './components/TavusCallView';
 import LoginPage from './components/LoginPage';
 import { ambientEngine } from './lib/ambientAudioEngine';
@@ -66,7 +69,8 @@ export type ViewType =
   | 'waitlist' 
   | 'policy' 
   | 'churn'
-  | 'login';
+  | 'login'
+  | 'customize';
 
 const getViewFromPath = (pathName: string): ViewType => {
   const cleanPath = pathName.toLowerCase().replace(/\/$/, '') || '/';
@@ -87,6 +91,9 @@ const getViewFromPath = (pathName: string): ViewType => {
       return 'admin';
     case '/churn':
       return 'churn';
+    case '/customize':
+    case '/avatar':
+      return 'customize';
     case '/pantheon':
     case '/storyboard':
       return 'pantheon';
@@ -143,6 +150,7 @@ const getPathFromView = (v: ViewType): string => {
     case 'policy': return '/policy';
     case 'admin': return '/admin';
     case 'churn': return '/churn';
+    case 'customize': return '/customize';
     case 'pantheon': return '/pantheon';
     case 'chat': return '/chat';
     case 'sanctuary': return '/sanctuary';
@@ -188,6 +196,17 @@ export default function App() {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Listen for internal navigation events dispatched from sub-components
+  // (e.g. AvatarCustomize -> Go to call)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const target = (e as CustomEvent<string>).detail as ViewType;
+      if (target) setView(target);
+    };
+    window.addEventListener('navigate', handler);
+    return () => window.removeEventListener('navigate', handler);
   }, []);
 
   const view = viewState;
@@ -336,7 +355,7 @@ export default function App() {
 
   // Check extreme crisis override
   const isExtremeCrisis = localStorage.getItem('extreme_crisis_flag') === 'true';
-  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat'].includes(view);
+  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat', 'customize'].includes(view);
   const requiresAuth = !isLoggedIn || !user;
 
   // Active view determination
@@ -442,7 +461,7 @@ export default function App() {
               </div>
             </div>
 
-            <TavusCallView />
+            <LiveAvatarWorkspace />
           </div>
         )}
         {/* /sanctuary → Original deity companion text chat */}
@@ -453,7 +472,16 @@ export default function App() {
           <OracleProfileCreator onProfileSaved={handleProfileSaved} savedProfile={savedProfile} isLightMode={isLightMode} />
         )}
         {activeView === 'pitch' && <PitchDeck isLightMode={isLightMode} />}
-        {activeView === 'videosanctuary' && <AvatarCallWorkspace />}
+        {activeView === 'videosanctuary' && <LiveAvatarWorkspace />}
+        {activeView === 'customize' && (
+          <AvatarCustomize
+            isLightMode={isLightMode}
+            onSelectAvatar={(av) => {
+              // Propagate selected avatar id up — for future global state integration
+              console.info('[AvatarCustomize] Selected avatar:', av.id);
+            }}
+          />
+        )}
         {['journal', 'mood', 'slow', 'community', 'wellness', 'clinical', 'blog', 'sync', 'prescription'].includes(activeView) && (
           <div className="max-w-7xl mx-auto px-6 py-6 md:py-10">
             <SanctuaryTools 

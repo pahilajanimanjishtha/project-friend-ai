@@ -719,7 +719,7 @@ function SettingsPanel({
     ['appearance', 'Avatar appearance', ['Nova · calm blue', 'Mira · warm rose', 'Ari · neutral slate']],
     ['voice', 'Voice gender', ['feminine', 'masculine', 'neutral']],
     ['accent', 'Voice accent', ['Indian English', 'US English', 'British English']],
-    ['language', 'Conversation language', ['English (India)', 'English (US)', 'Hindi']],
+    ['language', 'Conversation language', ['English (India)', 'English (US)', 'Hinglish']],
     ['personality', 'Conversation personality', ['Grounded and gently direct', 'Warm and encouraging', 'Reflective and curious']],
   ] as const;
 

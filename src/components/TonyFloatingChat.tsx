@@ -8,7 +8,11 @@ interface TonyMessage {
   text: string;
 }
 
-export default function TonyFloatingChat() {
+interface TonyFloatingChatProps {
+  isLightMode?: boolean;
+}
+
+export default function TonyFloatingChat({ isLightMode }: TonyFloatingChatProps = {}) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<TonyMessage[]>([
     { sender: 'tony', text: "Woof! 🐾 I'm Tony, your faithful support pug! If you are feeling heavy, sad, or carrying some heavy bones, share it with me! If there is anything I cannot answer, I can draft a real dispatch to my human helper team via your Gmail! Woof!" }

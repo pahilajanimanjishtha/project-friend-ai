@@ -148,15 +148,21 @@ export default function PantheonGrid({ setView, setSelectedCharId, isLightMode }
                       </span>
                     </div>
 
-                    <h3 className="font-serif text-2xl text-white font-normal mb-1">
-                      {char.name}
-                    </h3>
-                    <p className="text-sage text-[10px] tracking-wider uppercase mb-3 opacity-90 font-semibold">
-                      {char.role}
-                    </p>
+                    <div className="flex items-center gap-2 mb-1 flex-wrap">
+                      <h3 className="font-serif text-2xl text-white font-normal">
+                        {char.name}
+                      </h3>
+                      <span className="text-xs text-sage/75 font-sans">({char.alias})</span>
+                    </div>
 
-                    <p className="font-serif italic text-slate-300 text-xs leading-relaxed mb-4">
-                      {char.quote}
+                    <div className="mb-2">
+                      <span className="inline-block text-[11px] font-sans font-medium text-[#e0a96d] bg-[#e0a96d]/10 border border-[#e0a96d]/30 px-2 py-0.5 rounded-md">
+                        ✨ {char.simpleMeaning}
+                      </span>
+                    </div>
+
+                    <p className="font-sans text-slate-300 text-[11px] leading-relaxed mb-3 line-clamp-2">
+                      {char.helpFor}
                     </p>
 
                     {/* Footer helper */}
@@ -210,10 +216,19 @@ export default function PantheonGrid({ setView, setSelectedCharId, isLightMode }
                     </div>
 
                     {/* Want, Wound, Secret */}
-                    <div className="space-y-4">
+                    <div className="space-y-3">
+                      <div className="p-2.5 rounded-xl bg-black/40 border border-[#e0a96d]/30">
+                        <span className="text-[9px] font-bold tracking-[0.1em] text-[#e0a96d] uppercase block mb-0.5">
+                          ✨ Purpose & Guidance
+                        </span>
+                        <p className="font-sans text-[11px] text-slate-200 leading-snug">
+                          <strong className="text-white">{char.simpleMeaning}:</strong> {char.helpFor}
+                        </p>
+                      </div>
+
                       <div>
                         <span className="text-[10px] font-bold tracking-[0.2em] text-sage uppercase block mb-1">
-                          Want
+                          Core Desire
                         </span>
                         <p className="font-serif text-xs text-slate-200 leading-relaxed">
                           {char.want}

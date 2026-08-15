@@ -1368,9 +1368,17 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
                       {char.alias[0]}
                     </span>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-serif text-white font-medium">{char.name}</h4>
-                    <p className="text-[8px] text-sage tracking-wider uppercase font-semibold">{char.role}</p>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h4 className="text-xs font-serif text-white font-medium">{char.name}</h4>
+                      <span className="text-[9px] text-sage/70 font-sans">({char.alias})</span>
+                    </div>
+                    <p className="text-[9px] text-[#e0a96d] font-sans font-medium line-clamp-1">
+                      {char.simpleMeaning}
+                    </p>
+                    <p className="text-[8px] text-sage/60 tracking-wider uppercase font-semibold mt-0.5">
+                      {char.role}
+                    </p>
                   </div>
                 </button>
               );
@@ -1435,14 +1443,18 @@ export default function ChatSanctuary({ selectedCharId, setSelectedCharId, isLig
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="font-serif text-base text-white">{activeChar.name}</h3>
+                <span className="text-xs text-sage/70 font-sans">({activeChar.alias})</span>
                 <span
                   className={`text-[8px] tracking-widest font-mono uppercase px-2 py-0.5 rounded-full ${activeChar.colorScheme.badge}`}
                 >
                   {activeChar.badge}
                 </span>
+                <span className="text-[10px] font-sans font-medium text-[#e0a96d] bg-[#e0a96d]/10 border border-[#e0a96d]/30 px-2 py-0.5 rounded-md">
+                  ✨ {activeChar.simpleMeaning}
+                </span>
               </div>
-              <p className="text-[9px] text-sage font-semibold tracking-wider uppercase truncate max-w-[200px] sm:max-w-[320px]">
-                {activeChar.role} &middot; {activeChar.artStyle} Art integration
+              <p className="text-[10px] text-slate-300 font-sans leading-tight mt-0.5 max-w-[320px] sm:max-w-[480px]">
+                {activeChar.helpFor}
               </p>
             </div>
           </div>
