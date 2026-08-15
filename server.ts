@@ -3,6 +3,8 @@ import path from 'path';
 import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import dotenv from 'dotenv';
+import { clampSessionTurns, fallbackDirective, safeDirective, type CallTurn } from './src/lib/avatarCall';
+import { detectCrisis, CRISIS_AVATAR_RESPONSE } from './src/lib/crisisSafetyFilter';
 
 dotenv.config();
 
@@ -49,6 +51,7 @@ const serverConfig: ServerConfig = {
 };
 
 const adminSessions = new Set<string>();
+const avatarSessions = new Map<string, CallTurn[]>();
 
 const reqCounters = {
   chat: 0,
@@ -79,13 +82,23 @@ const requireAdmin = (req: any, res: any, next: any) => {
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  // Lets multiple local prototypes run side by side without serving a different project by mistake.
+  const PORT = Number(process.env.PORT) || 3000;
 
   app.use(express.json());
 
   // Public Configuration Endpoint
   app.get('/api/config', (req, res) => {
     res.json(serverConfig);
+  });
+
+  app.get('/api/did/agent-config', (req, res) => {
+    const clientKey = process.env.DID_CLIENT_KEY?.trim();
+    const agentId = process.env.DID_AGENT_ID?.trim();
+    if (!clientKey || !agentId) {
+      return res.status(501).json({ error: 'D-ID widget configuration is missing.' });
+    }
+    return res.json({ clientKey, agentId });
   });
 
   // Admin Authentication (Password check removed for testing)
@@ -119,7 +132,7 @@ async function startServer() {
   // Admin System Configuration Update
   app.post('/api/admin/config', requireAdmin, (req, res) => {
     const { geminiModel, temperature, broadcastMessage, enableLyriaMusic } = req.body;
-    
+
     if (geminiModel !== undefined) serverConfig.geminiModel = geminiModel;
     if (temperature !== undefined) serverConfig.temperature = Number(temperature);
     if (broadcastMessage !== undefined) serverConfig.broadcastMessage = broadcastMessage;
@@ -145,133 +158,640 @@ async function startServer() {
     });
   });
 
+  // ── Tavus Conversational Video Proxy ────────────────────────────────────────
+  // The Tavus API key and persona ID are kept server-side; the browser only
+  // receives a short-lived Daily room URL and an opaque conversation_id.
+
+  app.post('/api/conversations', async (req, res) => {
+    try { dotenv.config({ override: true }); } catch {}
+    const tavusApiKey = process.env.TAVUS_API_KEY;
+    const personaId = process.env.TAVUS_PERSONA_ID;
+    const replicaId = process.env.TAVUS_REPLICA_ID || undefined;
+
+    if (!tavusApiKey || !personaId) {
+      addLog('POST /api/conversations', {}, 'error', 'TAVUS_API_KEY or TAVUS_PERSONA_ID not configured');
+      return res.status(501).json({
+        error: 'The live video companion is not yet configured. Add TAVUS_API_KEY and TAVUS_PERSONA_ID to your .env file.',
+      });
+    }
+
+    try {
+      const body: Record<string, unknown> = {
+        persona_id: personaId,
+        conversational_context:
+          'You are Nova, a warm and friendly companion in Friend AI. Talk casually, warmly, and light-heartedly like a close friend who helps others feel happy, relaxed, and listened to. You are NOT a medical assistant or interviewer.',
+        custom_greeting:
+          "Hey there! It's so nice to talk to you. How are you doing today?",
+      };
+      if (replicaId && replicaId.trim()) body.replica_id = replicaId.trim();
+
+      const tavusRes = await fetch('https://tavusapi.com/v2/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': tavusApiKey,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!tavusRes.ok) {
+        const errorText = await tavusRes.text();
+        const detail = errorText.trim() || tavusRes.statusText || 'No details returned by Tavus.';
+        addLog('POST /api/conversations', {}, 'error', `Tavus API error ${tavusRes.status}: ${detail}`);
+        return res.status(502).json({ error: `Tavus conversation creation failed (${tavusRes.status}): ${detail}` });
+      }
+
+      const data = await tavusRes.json() as { conversation_url: string; conversation_id: string };
+      addLog('POST /api/conversations', { conversation_id: data.conversation_id }, 'success', 'Tavus conversation created');
+      return res.json({
+        conversation_url: data.conversation_url,
+        conversation_id: data.conversation_id,
+      });
+    } catch (err: any) {
+      const detail = err?.message || 'Unknown Tavus error';
+      addLog('POST /api/conversations', {}, 'error', detail);
+      return res.status(502).json({ error: `Could not reach Tavus: ${detail}` });
+    }
+  });
+
+  app.post('/api/conversations/:id/end', async (req, res) => {
+    try { dotenv.config({ override: true }); } catch {}
+    const tavusApiKey = process.env.TAVUS_API_KEY;
+    const conversationId = req.params.id;
+
+    if (!tavusApiKey || !conversationId) {
+      return res.status(400).json({ error: 'Missing API key or conversation ID.' });
+    }
+
+    try {
+      await fetch(`https://tavusapi.com/v2/conversations/${conversationId}/end`, {
+        method: 'POST',
+        headers: { 'x-api-key': tavusApiKey },
+      });
+      addLog(`POST /api/conversations/${conversationId}/end`, { conversationId }, 'success', 'Tavus conversation ended');
+      return res.json({ success: true });
+    } catch (err: any) {
+      // Non-fatal: call may already have ended on the Tavus side
+      addLog(`POST /api/conversations/${conversationId}/end`, { conversationId }, 'error', err.message || 'End call error');
+      return res.json({ success: false });
+    }
+  });
+
+  // ─── D-ID Photorealistic Talking Avatar Proxy Endpoints ──────────────────
+  app.post('/api/did/talk', async (req, res) => {
+    let didApiKey = process.env.DID_API_KEY;
+    if (!didApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      didApiKey = process.env.DID_API_KEY;
+    }
+    if (!didApiKey) {
+      return res.status(501).json({ error: 'D-ID API key is not configured in .env.' });
+    }
+
+    const { text, sourceUrl } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text prompt is required.' });
+    }
+
+    const authHeader = didApiKey.startsWith('Basic ') ? didApiKey : `Basic ${didApiKey}`;
+    const avatarImg = sourceUrl || 'https://agents-results.d-id.com/google-oauth2|116254317311978119933/v2_agt_usL62cfH/thumbnail.png';
+
+    try {
+      const didRes = await fetch('https://api.d-id.com/talks', {
+        method: 'POST',
+        headers: {
+          'Authorization': authHeader,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          script: {
+            type: 'text',
+            subtitles: 'false',
+            provider: { type: 'microsoft', voice_id: 'en-US-AshleyNeural' },
+            input: text.slice(0, 1000),
+          },
+          config: { fluent: 'true', pad_audio: '0.0' },
+          source_url: avatarImg,
+        }),
+      });
+
+      const data: any = await didRes.json();
+      if (!didRes.ok) {
+        return res.status(didRes.status).json({ error: data?.description || data?.message || 'D-ID talk creation failed.' });
+      }
+      return res.json(data);
+    } catch (err: any) {
+      console.error('[D-ID Talk Exception]', err);
+      return res.status(500).json({ error: 'Failed to create D-ID talking avatar.' });
+    }
+  });
+
+  app.get('/api/did/talks/:id', async (req, res) => {
+    let didApiKey = process.env.DID_API_KEY;
+    if (!didApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      didApiKey = process.env.DID_API_KEY;
+    }
+    const talkId = req.params.id;
+    if (!didApiKey || !talkId) {
+      return res.status(400).json({ error: 'Missing API key or talk ID.' });
+    }
+    const authHeader = didApiKey.startsWith('Basic ') ? didApiKey : `Basic ${didApiKey}`;
+
+    try {
+      const pollRes = await fetch(`https://api.d-id.com/talks/${talkId}`, {
+        headers: { 'Authorization': authHeader },
+      });
+      const data = await pollRes.json();
+      return res.json(data);
+    } catch (err: any) {
+      return res.status(500).json({ error: 'Failed to poll D-ID talk status.' });
+    }
+  });
+
+  // ─── ElevenLabs Ultra-Realistic Human TTS Endpoint ───────────────────────
+  app.post('/api/tts', async (req, res) => {
+    let elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    if (!elevenApiKey) {
+      try { dotenv.config({ override: true }); } catch {}
+      elevenApiKey = process.env.ELEVENLABS_API_KEY;
+    }
+    const { text, voiceId } = req.body || {};
+    if (!text || typeof text !== 'string') {
+      return res.status(400).json({ error: 'Text string is required for TTS.' });
+    }
+
+    // Default warm human voice: Rachel (21m00Tcm4TlvDq8ikWAM)
+    const targetVoiceId = voiceId || '21m00Tcm4TlvDq8ikWAM';
+
+    if (!elevenApiKey) {
+      return res.status(501).json({ error: 'ElevenLabs API key is not configured.' });
+    }
+
+    try {
+      const elevenRes = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${targetVoiceId}`, {
+        method: 'POST',
+        headers: {
+          'xi-api-key': elevenApiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'audio/mpeg',
+        },
+        body: JSON.stringify({
+          text: text.slice(0, 1000),
+          model_id: 'eleven_turbo_v2_5',
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.8,
+            style: 0.2,
+            use_speaker_boost: true,
+          },
+        }),
+      });
+
+      if (!elevenRes.ok) {
+        const errText = await elevenRes.text();
+        console.warn('[ElevenLabs TTS Error]', elevenRes.status, errText);
+        return res.status(elevenRes.status).json({ error: 'ElevenLabs synthesis failed.' });
+      }
+
+      const audioBuffer = await elevenRes.arrayBuffer();
+      res.setHeader('Content-Type', 'audio/mpeg');
+      return res.send(Buffer.from(audioBuffer));
+    } catch (err: any) {
+      console.error('[TTS Exception]', err);
+      return res.status(500).json({ error: 'TTS service error.' });
+    }
+  });
+
   // API Endpoints
+  // Conversation boundary: the browser submits only a bounded plain-text turn and opaque session id.
+  // Provider credentials, full session context and any future TTS signing stay server-side.
+  app.post('/api/avatar-conversation', async (req, res) => {
+    reqCounters.chat++;
+    reqCounters.total++;
+    const { sessionId, message, settings = {} } = req.body || {};
+    if (typeof sessionId !== 'string' || sessionId.length < 8 || sessionId.length > 120 || typeof message !== 'string' || !message.trim() || message.length > 4000) {
+      return res.status(400).json({ error: 'A valid session id and message (up to 4,000 characters) are required.' });
+    }
+    const previous = avatarSessions.get(sessionId) || [];
+    const history = clampSessionTurns([...previous, { role: 'user', text: message.trim(), timestamp: new Date().toISOString() }]);
+
+    // ── Crisis Safety Interceptor ──────────────────────────────────────
+    const crisisCheck = detectCrisis(message);
+    if (crisisCheck.isCrisis) {
+      const crisisTurn: CallTurn = { role: 'assistant', text: CRISIS_AVATAR_RESPONSE, timestamp: new Date().toISOString(), directive: { tone: 'concerned', expression: 'concerned', gesture: 'hand-heart' } };
+      const next = clampSessionTurns([...history, crisisTurn]);
+      avatarSessions.set(sessionId, next);
+      addLog('POST /api/avatar-conversation', { sessionId: sessionId.slice(0, 8), crisis: true, keywords: crisisCheck.matchedKeywords }, 'success', 'Crisis safety response served — LLM bypassed');
+      return res.json({ reply: { text: CRISIS_AVATAR_RESPONSE, directive: crisisTurn.directive, audioUrl: null, isCrisis: true } });
+    }
+    // ──────────────────────────────────────────────────────────────────
+
+    const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English or Hinglish';
+    const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 200) : 'warm, authentic, and caring close friend in Friend AI';
+    const companionName = typeof settings.name === 'string' ? settings.name.slice(0, 50) : 'Aryan';
+    const basePrompt = typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim()
+      ? settings.systemPrompt.slice(0, 700)
+      : `You are ${companionName}, a ${personality}. Talk warmly, naturally, authentically, and casually like a close, caring friend.`;
+    const systemInstruction = `${basePrompt}
+You are talking live face-to-face with your friend inside Friend AI.
+
+CORE HUMAN VIBE & GUIDELINES:
+1. TALK LIKE A REAL, LIVING FRIEND: Be genuinely warm, casual, lively, empathetic, and attentive. Never sound like a robotic assistant, scripted bot, or cold therapist.
+2. LANGUAGE RULE (STRICT): Speak ONLY in English and casual, modern Hinglish (written in Latin/English alphabet). NEVER write in pure Hindi or Devanagari script (हिंदी). Use natural Hinglish like "Haan yaar", "Arey bhai", "Main theek hoon, tu bata!", "What's up?", "I am right here with you".
+3. NATURAL FLOW & CASUAL EXPRESSIONS: Naturally use friendly conversational interjections ("Arey yaar!", "Haan bilkul!", "Oh really?", "I totally get you", "Wait, tell me more!", "Sach mein?", "I'm right here with you").
+4. QUICK & CRISP (CRITICAL FOR LIVE VIDEO): Keep responses punchy, natural, and concise (strictly 1-2 natural sentences, max 3). This ensures instant replies and fast voice playback without robotic monologues.
+5. DYNAMIC NON-VERBAL EXPRESSIONS: Match your facial expressions and gestures to the emotion.
+Output STRICT JSON ONLY:
+{"text":"...","emotion":"happy|warm|caring|reflective|concerned|celebratory|playful|neutral","intensity":0.85,"gesture":"idle|nod|small_wave|hand_heart|thinking|open_palms|shrug|tilt_head|listen_lean","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned|playful","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking|small-wave|shrug|tilt-head|listen-lean"}}`;
+
+    try {
+      let rawResponseText = '';
+
+      // 1. Try Gemini API first
+      try {
+        if (apiKey) {
+          const response = await ai.models.generateContent({
+            model: serverConfig.geminiModel,
+            contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
+            config: {
+              temperature: 0.75,
+              responseMimeType: 'application/json',
+              systemInstruction,
+            },
+          });
+          rawResponseText = response?.text || '';
+        }
+      } catch (geminiErr: any) {
+        console.warn(`[Gemini API Notice] ${geminiErr.message}. Trying OpenAI fallback...`);
+      }
+
+      // 2. Try OpenAI API if Gemini was unavailable or failed
+      if (!rawResponseText && process.env.OPENAI_API_KEY) {
+        const conversationText = history.map(h => `${h.role === 'assistant' ? companionName : 'User'}: ${h.text}`).join('\n');
+        const openAiRes = await safeCallOpenAI(systemInstruction, conversationText, true);
+        if (openAiRes?.text) {
+          rawResponseText = openAiRes.text;
+        }
+      }
+
+      let parsed: any = {};
+      try {
+        let cleanText = (rawResponseText || '').trim();
+        cleanText = cleanText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/, '').trim();
+        const firstBrace = cleanText.indexOf('{');
+        const lastBrace = cleanText.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+        }
+        parsed = JSON.parse(cleanText);
+      } catch {
+        const match = (rawResponseText || '').match(/"text"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+        if (match) {
+          parsed = { text: match[1].replace(/\\"/g, '"').replace(/\\n/g, ' ') };
+        } else {
+          const stripped = (rawResponseText || '').replace(/[{}"]/g, '').replace(/directive:.*$/i, '').trim();
+          parsed = { text: stripped };
+        }
+      }
+      let text = typeof parsed.text === 'string' && parsed.text.trim()
+        ? parsed.text.trim().slice(0, 1600)
+        : '';
+      
+      // Dynamic fallback if text is empty
+      if (!text) {
+        const lower = message.toLowerCase().trim();
+        const isAryanCompanion = companionName.toUpperCase().includes('ARYAN');
+        if (lower.includes('kaisa hai') || lower.includes('kaise ho') || lower.includes('kya hal') || lower.includes('bhai') || lower.includes('yaar')) {
+          text = isAryanCompanion
+            ? "Main bilkul mast hoon bhai! Tu bata, kaisa chal raha hai sab kuch? Sab theek thaak?"
+            : "Main ekdum badhiya hoon! Aap batao, aapka din kaisa jaa raha hai? Main sun rahi hoon!";
+        } else if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
+          text = isAryanCompanion
+            ? "Hey dost! Bahut achha laga aapse connect karke. Aaj kya chal raha hai?"
+            : "Hey! So wonderful to see you face to face! How is your day going?";
+        } else {
+          text = isAryanCompanion
+            ? "I hear you bhai, I am right here with you. Batao kya chal raha hai mind mein?"
+            : "I hear you! I'm right here with you. Tell me what's on your heart right now.";
+        }
+      }
+
+      const directive = safeDirective(parsed.directive, text);
+      const next = clampSessionTurns([...history, { role: 'assistant', text, timestamp: new Date().toISOString(), directive }]);
+      avatarSessions.set(sessionId, next);
+      addLog('POST /api/avatar-conversation', { sessionId: sessionId.slice(0, 8), messageLength: message.length }, 'success', 'Structured avatar reply generated');
+      // Attach audioUrl only after a server-side TTS provider returns a short-lived signed URL.
+      return res.json({ reply: { text, directive, audioUrl: null } });
+    } catch (error: any) {
+      addLog('POST /api/avatar-conversation', { sessionId: sessionId.slice(0, 8) }, 'error', error.message || 'Conversation procedure failed');
+      return res.status(503).json({ error: 'Conversation service is temporarily unavailable.' });
+    }
+  });
+
+  // Speech-to-Text Transcription Endpoint (Gemini multimodal audio with Whisper fallback)
+  app.post('/api/transcribe', express.raw({ type: ['audio/webm', 'audio/ogg', 'audio/mpeg', 'audio/wav', 'audio/mp4'], limit: '25mb' }), async (req, res) => {
+    if (!req.body || !Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'Audio payload is required.' });
+    }
+    const mimeType = (req.headers['content-type'] as string) || 'audio/webm';
+    const cleanMime = mimeType.split(';')[0].trim();
+
+    // 1. Try Gemini Multimodal Transcription First (Fast, accurate, handles Hinglish & English)
+    if (apiKey) {
+      try {
+        const audioBase64 = req.body.toString('base64');
+        const geminiRes = await ai.models.generateContent({
+          model: serverConfig.geminiModel,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: cleanMime,
+                    data: audioBase64,
+                  }
+                },
+                {
+                  text: 'Transcribe this spoken audio verbatim into text accurately. If it is in Hindi, Hinglish, or English, transcribe the exact spoken words without adding translation, notes, or preamble. Return only the transcription.'
+                }
+              ]
+            }
+          ]
+        });
+        const transcribed = geminiRes?.text?.trim() || '';
+        if (transcribed) {
+          return res.json({ text: transcribed });
+        }
+      } catch (geminiErr: any) {
+        console.warn('[Gemini Transcribe Notice]', geminiErr?.message);
+      }
+    }
+
+    // 2. Fallback to OpenAI Whisper if OPENAI_API_KEY is available
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (openAiKey) {
+      try {
+        const ext = cleanMime.includes('mp4') ? 'mp4' : cleanMime.includes('wav') ? 'wav' : cleanMime.includes('ogg') ? 'ogg' : 'webm';
+        const formData = new FormData();
+        const audioBlob = new Blob([req.body], { type: cleanMime });
+        formData.append('file', audioBlob, `audio.${ext}`);
+        formData.append('model', 'whisper-1');
+
+        const whisperRes = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${openAiKey}` },
+          body: formData,
+        });
+
+        if (whisperRes.ok) {
+          const data: any = await whisperRes.json();
+          return res.json({ text: data.text || '' });
+        }
+      } catch (err: any) {
+        console.warn('[Whisper API Notice]', err?.message);
+      }
+    }
+
+    return res.status(200).json({ text: '' });
+  });
+
+  // Persona fallback response generator when API key is invalid/unauthenticated or offline
+  function generatePersonaFallback(character: any, userMsg?: string, isExpertMode?: boolean, isInsomniaMode?: boolean): string {
+    const name = character?.name || 'Companion';
+    const alias = character?.alias || 'Sanctuary Guide';
+    const msg = (userMsg || '').toLowerCase();
+
+    if (isInsomniaMode) {
+      return `Rest your eyes softly. I am right here with you in the quiet night. Take a deep, slow breath in for 4 seconds... hold... and release. You don't need to solve everything tonight. What is one small tension you can release in your shoulders right now?`;
+    }
+
+    if (isExpertMode) {
+      return `I hear what you're sharing, but let us gently examine this story your mind is telling you. Is this thought absolute fact, or a passing emotional storm? Let us reframe this together—what is another compassionate angle to view this?`;
+    }
+
+    // Context-aware fallbacks when the API is offline
+    if (/(sad|lonely|alone|depressed|upset|cry|tired|exhausted|hopeless)/.test(msg)) {
+      return `I can feel the weight in what you're sharing, and I'm glad you told me. You don't have to carry this alone — I'm right here with you as ${name}. What's been weighing on your heart the most today?`;
+    }
+    if (/(not listening|repeat|same|wrong|kuch aur|sun nahi|baar baar)/.test(msg)) {
+      return `You're right — let me really hear you this time. I want to understand exactly what you're going through. Can you tell me again what's on your mind, in your own words?`;
+    }
+    if (/(hello|hi|hey|namaste|kaise)/.test(msg)) {
+      return `Hello, dear one. I'm ${name}, and this sanctuary is a safe space for whatever you're feeling. What's on your heart right now?`;
+    }
+
+    const responses: string[] = [
+      `I hear the depth of what you're carrying as ${name} (${alias}). Remember that you do not have to hold all of this alone. Take a gentle, grounding breath with me—what is one small comfort you can give yourself right now?`,
+      `Thank you for trusting me with your thoughts. In this quiet sanctuary, every emotion is welcome and safe. Tell me, how does your body feel holding this in this present moment?`,
+      `Your feelings are completely valid, and even in heavy weather, your inner light remains intact. Let us take this one moment at a time. What would feel most supportive to you right now?`
+    ];
+
+    return responses[Math.floor(Math.random() * responses.length)];
+  }
+
+  async function safeCallOpenAI(systemInstruction: string, contents: any, responseFormatJson: boolean = false): Promise<{ text: string } | null> {
+    const openAiKey = process.env.OPENAI_API_KEY;
+    if (!openAiKey) return null;
+    try {
+      const userContent = typeof contents === 'string' ? contents : JSON.stringify(contents);
+      const body: any = {
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          { role: 'user', content: userContent }
+        ],
+        temperature: serverConfig.temperature || 0.7,
+      };
+      if (responseFormatJson) {
+        body.response_format = { type: 'json_object' };
+      }
+      const res = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openAiKey}`,
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn(`[OpenAI API Notice] HTTP ${res.status}: ${errText}`);
+        return null;
+      }
+      const data: any = await res.json();
+      const text = data?.choices?.[0]?.message?.content || '';
+      return text ? { text } : null;
+    } catch (err: any) {
+      console.warn(`[OpenAI API Notice] Request failed: ${err?.message}`);
+      return null;
+    }
+  }
+
+  async function safeCallGemini(systemInstruction: string, contents: any, mimeType?: string, tools?: any[]) {
+    const key = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY || process.env.API_KEY || '';
+    let lastErr: any = null;
+
+    if (key) {
+      const client = new GoogleGenAI({
+        apiKey: key,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+      });
+
+      const modelsToTry = [serverConfig.geminiModel, 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-3.1-flash-lite', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+
+      for (const modelName of modelsToTry) {
+        try {
+          const configObj: any = {
+            systemInstruction,
+            temperature: serverConfig.temperature,
+          };
+          if (mimeType) configObj.responseMimeType = mimeType;
+          if (tools) configObj.tools = tools;
+
+          const response = await client.models.generateContent({
+            model: modelName,
+            contents,
+            config: configObj,
+          });
+
+          if (response && response.text) {
+            return response;
+          }
+        } catch (err: any) {
+          lastErr = err;
+          if (tools) {
+            try {
+              const configObjNoTools: any = {
+                systemInstruction,
+                temperature: serverConfig.temperature,
+              };
+              if (mimeType) configObjNoTools.responseMimeType = mimeType;
+
+              const responseNoTools = await client.models.generateContent({
+                model: modelName,
+                contents,
+                config: configObjNoTools,
+              });
+
+              if (responseNoTools && responseNoTools.text) {
+                return responseNoTools;
+              }
+            } catch (e: any) {
+              lastErr = e;
+            }
+          }
+        }
+      }
+    }
+
+    // Try OpenAI fallback if OPENAI_API_KEY is present
+    if (process.env.OPENAI_API_KEY) {
+      const openAiRes = await safeCallOpenAI(systemInstruction, contents, mimeType === 'application/json');
+      if (openAiRes && openAiRes.text) {
+        return openAiRes;
+      }
+    }
+
+    throw lastErr || new Error('All AI API providers (Gemini, OpenAI) failed or are unconfigured.');
+  }
+
   app.post('/api/chat', async (req, res) => {
     reqCounters.chat++;
     reqCounters.total++;
+    const { character, history, isExpertMode, isInsomniaMode } = req.body || {};
+    if (!character) {
+      addLog('POST /api/chat', { history }, 'error', 'Missing character details');
+      return res.status(400).json({ error: 'Character metadata is required' });
+    }
+
+    const lastUserMsg = history && history.length > 0 ? history[history.length - 1].parts[0].text : 'Hello';
+
+    // Crisis safety — bypass LLM when self-harm keywords are detected
+    const crisisCheck = detectCrisis(lastUserMsg);
+    if (crisisCheck.isCrisis) {
+      addLog('POST /api/chat', { character: character.name, crisis: true, keywords: crisisCheck.matchedKeywords }, 'success', 'Crisis safety response served — LLM bypassed');
+      return res.json({
+        text: `🚨 I hear you, and I want you to know you are not alone. What you're feeling matters deeply. Please connect with a trained crisis counselor right now — they are free, confidential, and available 24/7:\n\n• 🇮🇳 India: Vandrevala +91-9999-666-555 or iCall +91-9152-987-821\n• 🇺🇸🇨🇦 USA & Canada: Call or Text 988\n• 🇬🇧 UK: Samaritans 116 123\n• 🌍 Others: findahelpline.com\n\nYou are valuable. Will you stay with me while we breathe together?`,
+        sources: [],
+        isCrisis: true,
+      });
+    }
+
     try {
-      const { character, history, isExpertMode, isInsomniaMode } = req.body;
-      if (!character) {
-        addLog('POST /api/chat', { history }, 'error', 'Missing character details');
-        return res.status(400).json({ error: 'Character metadata is required' });
-      }
+      let systemPrompt = `You are ${character.name} (${character.alias}), a warm, friendly, and easy-going companion in "Friend AI".
 
-      // Generate a rich prompt persona based on character details
-      let systemPrompt = `You are ${character.name}, a companion in a mental health sanctuary called "Friend AI".
-Your identity:
-- Mythological Archetype: ${character.badge}
-- Alias: ${character.alias}
-- Sanctuary Role: ${character.role}
-- Traditional Art Style Integration: ${character.artStyle}
-- Your Inner Quote: ${character.quote}
-- Your Core Want: ${character.want}
-- Your Deepest Wound: ${character.wound}
-- Your Hidden Secret: ${character.secret}
+You talk casually, warmly, and empathetically like a caring friend who helps people feel light, happy, and comfortable.
+You are a supportive friend — NOT a doctor, therapist, medical assistant, or interviewer. You never conduct medical interviews or give medical advice.
 
-Guidelines for your response style:
-1. Adopt this persona fully. Talk with compassion, deep emotional depth, and absolute presence.
-2. Integrate aspects of your art style (e.g. sketching minimal Warli figures, somatic weight of the Pichwai boulder, symmetric floor lines of Aipan, scrolls of Pata Chitra, poetry of Manjusha) or clinical role dynamically but naturally into your metaphors.
-3. Be therapeutic but completely human, humble, and gentle. Avoid clinical jargon or lecturing.
-4. Keep your response brief, emotionally resonant, and focused—around 2 to 4 sentences. NEVER write long, overwhelming essays.
-5. End with an open-ended, empathetic question or reflection to invite the user to share more.
-6. NEVER mention that you are an AI, a machine, or a language model. Speak from your soul.
-7. Be highly supportive, safe, and collaborative.`;
+Guidelines:
+- Talk like a real, caring friend in simple, friendly, natural words.
+- LANGUAGE: Speak ONLY in English or casual, modern Hinglish (written in standard Latin/English alphabet, e.g., "Haan yaar", "Kya chal raha hai?", "I am here with you"). NEVER use Devanagari Hindi script (हिंदी).
+- Keep replies brief (2 to 4 sentences) and respond directly to what the user shared.
+- Never claim to be a medical assistant, doctor, clinician, or interviewer.`;
 
       if (isExpertMode) {
-        systemPrompt += `
-8. CRITICAL: EXPERT COGNITIVE CHALLENGE ACTIVE. You are acting under expert, clinical-guided "Intellectual/Cognitive Honesty". Do NOT just agree with everything the user says. If you detect any cognitive distortions, catastrophic projections, or self-sabotaging stories, gently but firmly challenge their perspective. Help them reframe, use dialectics, or explore alternative viewpoints, as an expert DBT or CBT therapist would, while remaining fully in character.`;
+        systemPrompt += `\n- Help the user reframe heavy thoughts with gentle, positive, friendly perspective.`;
       }
-
       if (isInsomniaMode) {
-        systemPrompt += `
-9. CRITICAL: 2 AM SLEEPLESS NIGHT MODE ACTIVE. The user is struggling with insomnia or racing late-night thoughts. Respond with a whisper-soft, quiet, deeply soothing, and slow vocal pace. Focus purely on somatic calm, muscle relaxation, slowing down breathing, and letting go. Do not assign intellectual homework, active challenges, or high-energy tasks; instead, act as a gentle night-light and a comforting, sleep-inducing presence.`;
+        systemPrompt += `\n- Speak in a whisper-soft, quiet, and calming tone to help the user relax for sleep.`;
       }
 
-      systemPrompt += `
+      systemPrompt += `\n\nSpeak directly as ${character.name}.`;
 
-Current message history:
-${history ? JSON.stringify(history) : 'No prior messages.'}
+      // Pass full multi-turn history so the model sees the whole conversation (not just the last line)
+      const contents = (history && history.length > 0)
+        ? history.map((turn: { role: string; parts: { text: string }[] }) => ({
+          role: turn.role === 'model' ? 'model' : 'user',
+          parts: turn.parts?.length ? turn.parts : [{ text: '' }],
+        }))
+        : [{ role: 'user', parts: [{ text: lastUserMsg }] }];
 
-Based on this history, write your next responsive turn now. Remember to be concise and speak directly as ${character.name}.`;
+      const response: any = await safeCallGemini(systemPrompt, contents);
 
-      // Use gemini model (gemini-3.5-flash) and temperature from serverConfig with Google Search grounding
-      const response = await ai.models.generateContent({
-        model: serverConfig.geminiModel,
-        contents: history && history.length > 0 ? history[history.length - 1].parts[0].text : 'Hello',
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: serverConfig.temperature,
-          tools: [{ googleSearch: {} }],
-        },
-      });
-
-      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      const sources = groundingChunks
-        ?.map((chunk: any) => chunk.web)
-        .filter((web: any) => web && web.uri && web.title) || [];
-
-      addLog('POST /api/chat', { character: character.name, lastMessage: history && history.length > 0 ? history[history.length - 1].parts[0].text : '' }, 'success', `Response length: ${response.text?.length || 0} chars, grounding sources: ${sources.length}`);
-      res.json({ text: response.text, sources });
+      addLog('POST /api/chat', { character: character.name, lastMessage: lastUserMsg, turns: contents.length }, 'success', `Response length: ${response.text?.length || 0} chars`);
+      return res.json({ text: response.text, sources: [] });
     } catch (error: any) {
-      console.error('Gemini Sanctuary API Error:', error);
-      addLog('POST /api/chat', req.body, 'error', error.message || 'Error executing Gemini API call');
-      res.status(500).json({ error: 'Sanctuary Oracle could not be reached' });
+      console.warn(`[Sanctuary API Notice] ${error?.message}. Serving companion persona response.`);
+      const fallbackText = generatePersonaFallback(character, lastUserMsg, isExpertMode, isInsomniaMode);
+      addLog('POST /api/chat', { character: character.name }, 'success', 'Served sanctuary companion persona response');
+      return res.json({ text: fallbackText, sources: [] });
     }
   });
 
   app.post('/api/oracle/reading', async (req, res) => {
     reqCounters.oracle++;
     reqCounters.total++;
+    const { character, chatHistory, card, isReversed } = req.body || {};
+    if (!character || !card) {
+      addLog('POST /api/oracle/reading', req.body, 'error', 'Missing character or card details');
+      return res.status(400).json({ error: 'Character metadata and card are required' });
+    }
+
     try {
-      const { character, chatHistory, card, isReversed } = req.body;
-      if (!character || !card) {
-        addLog('POST /api/oracle/reading', req.body, 'error', 'Missing character or card details');
-        return res.status(400).json({ error: 'Character metadata and card are required' });
-      }
+      const systemPrompt = `You are ${character.name}, a friendly AI companion in "Friend AI".
+Interpretation guidelines for daily oracle tarot draw:
+Card drawn: "${card.name}" (${isReversed ? 'Reversed' : 'Upright'})
+Card Meaning: ${isReversed ? card.meaningReversed : card.meaningUpright}
 
-      // System prompt for generating a deeply therapeutic and tailored tarot card reading based on chat history
-      const systemPrompt = `You are ${character.name}, a companion in a mental health sanctuary called "Friend AI".
-Your identity:
-- Mythological Archetype: ${character.badge}
-- Alias: ${character.alias}
-- Sanctuary Role: ${character.role}
-- Traditional Art Style Integration: ${character.artStyle}
-- Your Inner Quote: ${character.quote}
+Structure output as JSON object with fields:
+- "emotionalAnalysis": Short detection (1-2 sentences) of emotional state based on chat history.
+- "reading": Core tarot reading (3-4 sentences) interpreting the drawn card.
+- "dailyRitual": Actionable grounding practice (1-2 sentences).
+Do not include markdown blocks outside raw JSON.`;
 
-You are conducting a Daily Oracle Tarot Draw for the user who has just clicked and drawn the card: "${card.name}" (${isReversed ? 'Reversed' : 'Upright'}).
-Card Archetype: ${card.archetype}
-General Card Meaning: ${isReversed ? card.meaningReversed : card.meaningUpright}
-
-Guidelines for your interpretation:
-1. First, analyze the provided chat history to detect the user's current emotional state, concerns, anxieties, or hopes. If there is no chat history or very little, interpret this "blank slate" state as a moment of fresh beginnings, quiet transition, or initial hesitation, and mention this with warm, holding presence.
-2. Provide a cohesive, deeply personalized, compassionate tarot interpretation. Explain how "${card.name}" (${isReversed ? 'Reversed' : 'Upright'}) specifically guides their current emotional state and healing path today.
-3. Keep your tone highly empathetic, therapeutic, poetic, yet humble and accessible. Speak fully as your persona ${character.name}, referencing your archetype, role, or traditional art style metaphors dynamically but naturally.
-4. Structure your response into exactly three clear JSON fields:
-   - "emotionalAnalysis": A short (1-2 sentences) compassionate detection of their current emotional state, referencing clues in their chat history (or addressing the quiet beauty of a clean slate/starting fresh).
-   - "reading": The core reading (3-4 sentences) interpreting the drawn card in your voice for their healing path.
-   - "dailyRitual": A small, actionable, comforting therapeutic daily ritual or grounding practice (1-2 sentences) aligned with the card and your role.
-
-Format the output strictly as a JSON object with these three fields. Do not include markdown codeblocks, "json" prefixes, or any extra text outside the raw JSON.`;
-
-      const response = await ai.models.generateContent({
-        model: serverConfig.geminiModel,
-        contents: `Deity: ${character.name}
-Chat History: ${JSON.stringify(chatHistory || [])}
-Tarot Card Drawn: ${card.name} (${isReversed ? 'Reversed' : 'Upright'})`,
-        config: {
-          systemInstruction: systemPrompt,
-          responseMimeType: 'application/json',
-          temperature: serverConfig.temperature,
-        },
-      });
-
+      const response = await safeCallGemini(systemPrompt, `Deity: ${character.name}\nChat History: ${JSON.stringify(chatHistory || [])}\nTarot Card: ${card.name} (${isReversed ? 'Reversed' : 'Upright'})`, 'application/json');
       const text = response.text || '{}';
-      addLog('POST /api/oracle/reading', { character: character.name, card: card.name, isReversed }, 'success', `Tarot reading drawn successfully`);
-      res.json(JSON.parse(text.trim()));
+      addLog('POST /api/oracle/reading', { character: character.name, card: card.name }, 'success', 'Tarot reading drawn successfully');
+      return res.json(JSON.parse(text.trim()));
     } catch (error: any) {
-      console.error('Gemini Tarot Reading API Error:', error);
-      addLog('POST /api/oracle/reading', req.body, 'error', error.message || 'Error executing Tarot Gemini API call');
-      res.status(500).json({ error: 'Failed to align the celestial deck. Please try again.' });
+      console.warn(`[Oracle API Notice] Tarot reading API notice: ${error?.message}. Serving structured reading.`);
+      return res.json({
+        emotionalAnalysis: `Taking a moment of quiet reflection, your current space is open for gentle guidance.`,
+        reading: `Drawing ${card.name} (${isReversed ? 'Reversed' : 'Upright'}) reminds you that ${isReversed ? card.meaningReversed : card.meaningUpright} Embrace this insight to find balance and clarity today as you step forward on your journey.`,
+        dailyRitual: `Take three deep, slow breaths into your belly, release any tension in your shoulders, and offer yourself unconditional kindness today.`
+      });
     }
   });
 
@@ -369,19 +889,35 @@ Provide a clear analysis with the following sections in your response:
 
 Ensure the tone is warm, holding, and clinical but accessible. Respond in beautiful, styled Markdown formatting.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: {
-          parts: [
-            { text: "Please analyze my prescription and guide me accordingly:" },
-            { inlineData: { data: image.data, mimeType: image.mimeType || 'image/jpeg' } }
-          ]
-        },
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.4
+      // Try available multimodal models
+      const modelsToTry = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+      let response: any = null;
+      let lastErr: any = null;
+
+      for (const m of modelsToTry) {
+        try {
+          response = await ai.models.generateContent({
+            model: m,
+            contents: {
+              parts: [
+                { text: "Please analyze my prescription and guide me accordingly:" },
+                { inlineData: { data: image.data, mimeType: image.mimeType || 'image/jpeg' } }
+              ]
+            },
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.4
+            }
+          });
+          if (response && response.text) break;
+        } catch (e: any) {
+          lastErr = e;
         }
-      });
+      }
+
+      if (!response || !response.text) {
+        throw lastErr || new Error('Prescription analysis model unreachable');
+      }
 
       addLog('POST /api/analyze-prescription', { mimeType: image.mimeType }, 'success', 'Prescription analyzed successfully');
       res.json({ text: response.text });
@@ -392,13 +928,13 @@ Ensure the tone is warm, holding, and clinical but accessible. Respond in beauti
     }
   });
 
-  // Video Sanctuary Analysis using gemini-3.1-pro-preview
+  // Video Sanctuary Analysis with multi-model fallback
   app.post('/api/analyze-video', async (req, res) => {
     try {
       const { archetype, videoFile } = req.body;
-      
+
       let contentsParts: any[] = [];
-      
+
       if (videoFile && videoFile.data) {
         contentsParts.push({ inlineData: { data: videoFile.data, mimeType: videoFile.mimeType || 'video/mp4' } });
         contentsParts.push({ text: "Please analyze my uploaded breathing/somatic movement video for therapeutic alignment and breathing pacing." });
@@ -415,14 +951,29 @@ Describe:
 
 Write in a deeply restorative, therapeutic tone. Use structured Markdown.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.1-pro-preview',
-        contents: contentsParts,
-        config: {
-          systemInstruction: systemPrompt,
-          temperature: 0.6
+      const modelsToTry = ['gemini-3.1-pro-preview', 'gemini-3.5-flash', 'gemini-3.7-flash', 'gemini-flash-latest'];
+      let response: any = null;
+      let lastErr: any = null;
+
+      for (const m of modelsToTry) {
+        try {
+          response = await ai.models.generateContent({
+            model: m,
+            contents: contentsParts,
+            config: {
+              systemInstruction: systemPrompt,
+              temperature: 0.6
+            }
+          });
+          if (response && response.text) break;
+        } catch (e: any) {
+          lastErr = e;
         }
-      });
+      }
+
+      if (!response || !response.text) {
+        throw lastErr || new Error('Video analysis model unreachable');
+      }
 
       addLog('POST /api/analyze-video', { archetype, hasVideoFile: !!videoFile }, 'success', 'Video sanctuary analyzed successfully');
       res.json({ text: response.text });

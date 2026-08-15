@@ -3,7 +3,7 @@ import React from 'react';
 import { 
   Menu, X, Sparkles, Layout, MessageSquare, Presentation, User, Sun, Moon, 
   PenTool, Music, ChevronDown, BarChart3, Mail, Users, HeartPulse, 
-  ShieldCheck, BookOpen, Cloud, Pill, Video, Volume2, VolumeX, Headphones, Sliders, TrendingUp, StickyNote
+  ShieldCheck, BookOpen, Cloud, Pill, Video, Volume2, VolumeX, Headphones, Sliders, TrendingUp, StickyNote, Wind, Brain, Palette, Cpu
 } from 'lucide-react';
 import { auth, signInWithGoogle, logOut, db } from '../lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -177,29 +177,44 @@ export default function Navigation({
   }, []);
 
   const abilities = [
-    { id: 'chat', label: 'Private Chat Buddy', icon: MessageSquare, description: 'Talk about your feelings in a private space' },
-    { id: 'pantheon', label: '12 Friendly Guides', icon: Sparkles, description: 'Meet the 12 companion guides and stories' },
-    { id: 'oracle', label: 'Oracle Soul Card', icon: User, description: 'Create your custom companion tarot profile' },
-    { id: 'journal', label: 'Happy Diary', icon: PenTool, description: 'Write down what happened today' },
-    { id: 'mood', label: 'Feeling Chart', icon: BarChart3, description: 'Color tracking for your moods and energy' },
-    { id: 'slow', label: 'Slow Letters', icon: Mail, description: 'Send and receive letters that arrive slowly' },
-    { id: 'community', label: 'Friendly Circle', icon: Users, description: 'Meet companion guides in a quiet circle' },
-    { id: 'wellness', label: 'Breathe & Relax', icon: HeartPulse, description: 'Deep breathing loop with moving circles' },
-    { id: 'clinical', label: 'Helper Friends', icon: ShieldCheck, description: 'Emergency website & helpline directories' },
-    { id: 'blog', label: 'Happy Brain Stories', icon: BookOpen, description: 'Neurological science and story scrolls' },
-    { id: 'sync', label: 'Workspace Hub', icon: Cloud, description: 'Spawn Meets, save Drive diaries, & draft emails' },
-    { id: 'notes', label: 'Notes Sync (Keep)', icon: StickyNote, description: 'View, create, & sync personal Keep notes to Drive' },
-    { id: 'music', label: 'Happy Music Maker', icon: Music, description: 'Compose word-based magical songs' },
-    { id: 'prescription', label: 'Prescription Analyzer', icon: Pill, description: 'Scan medicine packages for calm insights' },
-    { id: 'videosanctuary', label: 'Video Sanctuary', icon: Video, description: 'Somatic natural breathing video guides' },
-    { id: 'churn', label: 'Churn & Revenue Insights', icon: TrendingUp, description: 'MRR tracking, churn drivers, & retention cohorts' },
-    { id: 'pitch', label: 'Investor Pitch Deck', icon: Presentation, description: 'Sanctuary pitch deck & clinical model' },
-    { id: 'admin', label: 'Admin Console', icon: Sliders, description: 'Admin metrics, waitlist & server broadcast' },
-    { id: 'policy', label: 'Terms & Privacy Policy', icon: ShieldCheck, description: 'GDPR Article 22 & Clinical Safety Brief' },
+    { id: 'chat', label: '🎥 Live 3D Companion Call', icon: Video, description: 'Real-time studio HD 3D video companion call with lip sync and gestures' },
+    { id: 'customize', label: '🎭 Customize Your Avatar', icon: Palette, description: 'Choose your companion avatar, voice style, and gesture personality' },
+    { id: 'self-hosted', label: '⚡ Self-Hosted Avatar Engine (Zero API Keys)', icon: Cpu, description: '100% free local AI avatar engine for Persona p2fbd605' },
+    { id: 'sanctuary', label: '💬 AI Companion Sanctuary Chat', icon: MessageSquare, description: 'Private AI companion chat with specialized listening archetypes' },
+    { id: 'somatic-reset', label: '🧘 Somatic Reset (5-4-3-2-1)', icon: Wind, description: '5-4-3-2-1 sensory grounding & box breathing pacer' },
+    { id: 'cbt-reframe', label: '🧠 CBT Reframe & Unburden', icon: Brain, description: 'Spot unhelpful thoughts & formulate reframes' },
+    { id: 'pantheon', label: '🎨 12 Archetypal Guides', icon: Sparkles, description: 'Explore companion guides, mythic stories, & art styles' },
+    { id: 'oracle', label: '🃏 Oracle Soul Profile', icon: User, description: 'Create your custom companion tarot card profile' },
+    { id: 'journal', label: '📓 Mindful Reflection Journal', icon: PenTool, description: 'Private daily growth diary and thought log' },
+    { id: 'mood', label: '📊 Mood & Energy Analytics', icon: BarChart3, description: 'Visual emotional tracking charts for daily patterns' },
+    { id: 'slow', label: '✉️ Slow Reflective Letters', icon: Mail, description: 'Send and receive letters that arrive at a peaceful pace' },
+    { id: 'community', label: '🪷 Peer Sanctuary Circle', icon: Users, description: 'Safe community circle for shared reflections' },
+    { id: 'wellness', label: '🌿 Somatic Breathing Pacer', icon: HeartPulse, description: 'Deep breathing loop with visual rhythm waves' },
+    { id: 'clinical', label: '⚕️ Emergency Crisis Directories', icon: ShieldCheck, description: '24/7 emergency helplines & regional medical resources' },
+    { id: 'blog', label: '📚 Psychoeducation & Brain Articles', icon: BookOpen, description: 'Science-backed mindfulness and reframing scrolls' },
+    { id: 'sync', label: '🌌 Workspace & Meet Hub', icon: Cloud, description: 'Google Keep sync, Drive backups, & Google Meet rooms' },
+    { id: 'notes', label: '📌 Google Keep Notes Sync', icon: StickyNote, description: 'View, create, color-code, & sync personal Keep notes' },
+    { id: 'music', label: '🎵 AI Ambient Music Generator', icon: Music, description: 'Compose custom calming soundscapes' },
+    { id: 'prescription', label: '💊 Prescription Helper & Safety', icon: Pill, description: 'Scan medicine packaging for clear info & breathing pairing' },
+    { id: 'videosanctuary', label: '🎬 Somatic Video Sanctuary', icon: Video, description: 'Guided nature breathing videos for deep relaxation' },
+    { id: 'churn', label: '📈 Platform Analytics & Metrics', icon: TrendingUp, description: 'User engagement, retention cohorts, & metrics' },
+    { id: 'pitch', label: '📊 Project Vision & Architecture', icon: Presentation, description: 'Clinical art integration model & pitch deck' },
+    { id: 'admin', label: '⚙️ Admin Console', icon: Sliders, description: 'Platform configuration, waitlist, & status' },
+    { id: 'policy', label: '🛡️ Safety & Privacy Policy', icon: ShieldCheck, description: 'Privacy policy, GDPR terms, & safety brief' },
   ];
 
   const handleLinkClick = (viewId: string) => {
-    setView(viewId);
+    if (viewId === 'somatic-reset') {
+      localStorage.setItem('open_chat_tool', 'somatic-reset');
+      setView('sanctuary');
+      window.dispatchEvent(new Event('open_chat_tool'));
+    } else if (viewId === 'cbt-reframe') {
+      localStorage.setItem('open_chat_tool', 'cbt-reframe');
+      setView('sanctuary');
+      window.dispatchEvent(new Event('open_chat_tool'));
+    } else {
+      setView(viewId);
+    }
     setDesktopDropdownOpen(false);
     setMobileMenuOpen(false);
     setMobileAccordionOpen(false);
@@ -219,7 +234,7 @@ export default function Navigation({
   };
 
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 border-b-2 border-brown bg-brown-deep/85 backdrop-blur-xl transition-all duration-300">
+    <nav className="fixed top-0 left-0 right-0 z-[100] isolate border-b-2 border-brown bg-brown-deep/85 backdrop-blur-xl transition-all duration-300">
       <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
         {/* Logo */}
         <button
@@ -227,7 +242,7 @@ export default function Navigation({
           className="flex items-center gap-2 text-left cursor-pointer focus:outline-none"
         >
           <span className="font-serif tracking-[0.16em] uppercase text-sm md:text-base font-bold text-periwinkle hover:opacity-80 transition-opacity">
-            Friend AI <span className="text-white/40 font-sans font-light">✦</span>
+            Friend AI
           </span>
         </button>
 
@@ -257,7 +272,7 @@ export default function Navigation({
 
             {/* Dropdown Menu Container */}
             {desktopDropdownOpen && (
-              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-3 w-[460px] max-h-[480px] overflow-y-auto rounded-2xl border-2 border-brown bg-[#0a0f1d] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.6)] animate-fadeIn grid grid-cols-2 gap-2 z-50 scrollbar-none">
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-3 w-[min(460px,calc(100vw-2rem))] max-h-[min(480px,calc(100vh-7rem))] overflow-y-auto rounded-2xl border-2 border-brown bg-[#0a0f1d] p-4 shadow-[0_10px_40px_rgba(0,0,0,0.6)] animate-fadeIn grid grid-cols-1 sm:grid-cols-2 gap-2 z-[110] scrollbar-none">
                 <div className="col-span-2 pb-2 mb-1 border-b border-white/5 flex justify-between items-center">
                   <span className="text-[9px] font-mono uppercase tracking-widest text-[#c9a45c] font-bold">App Abilities &amp; Tools</span>
                   <span className="text-[8px] font-mono text-slate-500">Select any module</span>
@@ -288,6 +303,17 @@ export default function Navigation({
               </div>
             )}
           </div>
+
+          {/* Customize Avatar */}
+          <button
+            onClick={() => handleLinkClick('customize')}
+            className={`flex items-center gap-2 text-[11px] uppercase tracking-[0.12em] font-semibold transition-colors cursor-pointer ${
+              currentView === 'customize' ? 'text-periwinkle' : 'text-sage hover:text-white'
+            }`}
+          >
+            <Palette className="w-3.5 h-3.5" />
+            Customize
+          </button>
 
           {/* Vision & Mission */}
           <button
@@ -326,11 +352,11 @@ export default function Navigation({
               currentView === 'waitlist' ? 'text-[#c9a45c] font-extrabold' : 'text-[#c9a45c]/80 hover:text-[#c9a45c]'
             }`}
           >
-            Contribute 🏛️
+            Contribute
           </button>
         </div>
 
-        {/* CTA & Panic escape */}
+        {/* CTA & Audio */}
         <div className="hidden md:flex items-center gap-3">
           
           {/* Ambient Soundscape Toggle */}
@@ -497,20 +523,13 @@ export default function Navigation({
               {isLightMode ? <Moon className="w-4.5 h-4.5" /> : <Sun className="w-4.5 h-4.5" />}
             </button>
           )}
-          <button
-            onClick={() => handleLinkClick('decoy')}
-            className="font-serif text-[10px] tracking-[0.12em] uppercase text-[#e07070] border border-[#e07070]/30 hover:border-[#e07070] px-4 py-2.5 rounded-xl transition-all duration-300 cursor-pointer"
-            title="Instant Safe Exit"
-          >
-            Secret Escape 🚪
-          </button>
-          
+
           {user ? (
             <div className="flex items-center gap-3">
               <button 
-                onClick={() => handleLinkClick('login')}
+                onClick={() => handleLinkClick('oracle')}
                 className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-white/5 transition-all text-left cursor-pointer"
-                title="View Profile & Clinical Safety Brief"
+                title="View & Edit Sacred Oracle Profile"
               >
                 <div className="flex flex-col items-end shrink-0 select-none">
                   <span className="text-[10px] font-mono font-bold text-slate-300">
@@ -643,7 +662,7 @@ export default function Navigation({
                 currentView === 'waitlist' ? 'text-[#c9a45c] font-bold' : 'text-[#c9a45c]/85 hover:text-[#c9a45c]'
               }`}
             >
-              Contribute 🏛️
+              Contribute
             </button>
             
             {/* Quick Actions */}
@@ -702,12 +721,6 @@ export default function Navigation({
                   🔑 Sign In / Login Page &amp; Disclaimer
                 </button>
               )}
-              <button
-                onClick={() => handleLinkClick('decoy')}
-                className="w-full font-serif text-[11px] text-center tracking-[0.14em] uppercase text-[#e07070] border border-[#e07070]/30 py-3 rounded-xl transition-all duration-300 cursor-pointer"
-              >
-                ⚠️ Secret Escape 🚪
-              </button>
               <button
                 onClick={() => handleLinkClick('chat')}
                 className="w-full font-serif text-[11px] text-center tracking-[0.14em] uppercase text-white bg-periwinkle-dark py-3 rounded-xl font-bold hover:bg-periwinkle-hover transition-all duration-300 cursor-pointer"

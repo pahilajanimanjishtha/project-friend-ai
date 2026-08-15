@@ -139,7 +139,7 @@ export default function Waitlist({ isLightMode }: WaitlistProps) {
           className="inline-flex items-center gap-2 border-2 border-[#c9a45c]/40 bg-[#c9a45c]/10 text-[#c9a45c] px-4 py-1.5 rounded-full text-[10px] font-mono tracking-[0.2em] uppercase font-bold"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          Contribute to Pantheon 🏛️
+          Contribute to Pantheon
         </motion.div>
 
         <motion.h1

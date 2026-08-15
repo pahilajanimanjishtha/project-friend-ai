@@ -67,6 +67,16 @@ export default function LoginPage({ isLightMode, setView, onLoginSuccess, savedP
     return () => unsubscribe();
   }, []);
 
+  // Auto-redirect authenticated users away from login view to home
+  useEffect(() => {
+    if (!loading && user && step !== 'oracle') {
+      if (onLoginSuccess) {
+        onLoginSuccess();
+      }
+      setView('home');
+    }
+  }, [loading, user, step]);
+
   const handleDisclaimerToggle = (checked: boolean) => {
     setDisclaimerAccepted(checked);
     localStorage.setItem('clinical_disclaimer_accepted', checked.toString());
@@ -252,6 +262,23 @@ export default function LoginPage({ isLightMode, setView, onLoginSuccess, savedP
             savedProfile={savedProfile || null} 
             isLightMode={isLightMode} 
           />
+        </div>
+      </div>
+    );
+  }
+
+  if (!loading && user && step !== 'oracle') {
+    return (
+      <div className={`min-h-[70vh] flex flex-col items-center justify-center font-serif text-sm ${
+        isLightMode ? 'bg-[#faf8f4] text-stone-800' : 'bg-[#03070f] text-stone-300'
+      }`}>
+        <div className="text-center space-y-3 animate-pulse">
+          <div className="w-10 h-10 rounded-full bg-[#c9a45c] mx-auto flex items-center justify-center text-black font-bold text-lg">
+            Ω
+          </div>
+          <p className="font-mono text-xs uppercase tracking-widest text-[#c9a45c]">
+            Already Authenticated &middot; Entering Sanctuary...
+          </p>
         </div>
       </div>
     );
