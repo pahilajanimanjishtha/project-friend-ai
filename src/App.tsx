@@ -185,6 +185,9 @@ export default function App() {
   const [viewState, setViewState] = useState<ViewType>(() => getViewFromPath(window.location.pathname));
 
   const setView = (newView: ViewType | ((prev: ViewType) => ViewType)) => {
+    // Stop any live face-to-face resources before changing the rendered view.
+    // This also covers async permission/recognition callbacks racing unmount.
+    window.dispatchEvent(new Event('face-to-face-stop'));
     setViewState((prev) => {
       const resolved = typeof newView === 'function' ? newView(prev) : newView;
       const targetPath = getPathFromView(resolved);
