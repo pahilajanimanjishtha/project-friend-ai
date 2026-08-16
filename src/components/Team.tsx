@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Users, Code, HeartPulse, Scale, Sparkles, Activity, Linkedin
@@ -76,7 +76,7 @@ const CarouselCard: React.FC<CarouselCardProps> = ({ member, isLightMode, ariaHi
             className={`w-full h-full object-cover grayscale-[25%] group-hover:grayscale-0 group-hover:scale-[1.05] transition-all duration-500 ${member.name === 'Sarvesh Pahilajani'
               ? 'scale-[1.9] origin-[50%_17%] object-top'
               : member.name === 'Rishabh Kothiyal'
-                ? 'scale-[1.3] origin-[50%_18%] object-top'
+                ? 'scale-[1.55] origin-[50%_10%] object-top'
                 : 'object-center'
               }`}
           />
@@ -172,7 +172,7 @@ export default function Team({ isLightMode = false }: TeamProps) {
       badge: "Tech & Design",
       color: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
       description: "An expert software engineering collaborator focused on high-performance interactive layout structures and scalable system integration.",
-      imageUrl: "/rishabh_kothiyal.svg",
+      imageUrl: "/Rishabh.png",
       linkedin: "https://www.linkedin.com/in/rishabhkothiyal/"
     },
     {
@@ -294,23 +294,124 @@ export default function Team({ isLightMode = false }: TeamProps) {
     { id: 'strategy', label: 'Strategic & Legal', count: members.filter(m => m.category === 'strategy').length }
   ] as const;
 
-  const trackDuration = Math.max(28, filteredMembers.length * 5);
+  const [x, setX] = useState(0);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const trackRef = useRef<HTMLDivElement>(null);
+  const xRef = useRef(0);
+  const setWidthRef = useRef(0);
+  const wasPointerDownRef = useRef(false);
+  const lastXRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const velocityRef = useRef(0);
+  const animRef = useRef<number | null>(null);
+
+  const measure = useCallback(() => {
+    if (trackRef.current) setWidthRef.current = trackRef.current.offsetWidth / 3;
+  }, []);
+
+  const applyX = useCallback((value: number) => {
+    const W = setWidthRef.current;
+    let next = value;
+    if (W > 0) {
+      while (next > W) next -= W;
+      while (next <= -W) next += W;
+    }
+    xRef.current = next;
+    if (trackRef.current) trackRef.current.style.transform = `translate3d(${next}px, 0, 0)`;
+  }, []);
+
+  const cancelAnimation = useCallback(() => {
+    if (animRef.current) {
+      cancelAnimationFrame(animRef.current);
+      animRef.current = null;
+    }
+  }, []);
+
+  const startInertia = useCallback((velocity: number) => {
+    cancelAnimation();
+    velocityRef.current = velocity;
+    const step = () => {
+      velocityRef.current *= 0.94;
+      applyX(xRef.current + velocityRef.current * 16);
+      if (Math.abs(velocityRef.current) > 0.05) {
+        animRef.current = requestAnimationFrame(step);
+      } else {
+        animRef.current = null;
+      }
+    };
+    animRef.current = requestAnimationFrame(step);
+  }, [applyX, cancelAnimation]);
+
+  const updateX = (value: number) => {
+    setX(value);
+    applyX(value);
+  };
+
+  useEffect(() => {
+    measure();
+    const onResize = () => measure();
+    window.addEventListener('resize', onResize);
+    return () => {
+      window.removeEventListener('resize', onResize);
+      cancelAnimation();
+    };
+  }, [measure, cancelAnimation]);
+
+  useEffect(() => {
+    measure();
+    setX(0);
+    applyX(0);
+  }, [filteredMembers.length, measure, applyX]);
+
+  const onPointerEnter = (e: React.PointerEvent<HTMLDivElement>) => {
+    cancelAnimation();
+    lastXRef.current = e.clientX;
+    lastTimeRef.current = performance.now();
+    velocityRef.current = 0;
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    cancelAnimation();
+    wasPointerDownRef.current = true;
+    lastXRef.current = e.clientX;
+    lastTimeRef.current = performance.now();
+    velocityRef.current = 0;
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const now = performance.now();
+    const dt = Math.max(1, now - lastTimeRef.current);
+    // Follow-cursor steering: cursor left -> content moves left, cursor right -> content moves right
+    const delta = e.clientX - lastXRef.current;
+    lastXRef.current = e.clientX;
+    lastTimeRef.current = now;
+    velocityRef.current = delta / dt;
+    updateX(xRef.current + delta);
+  };
+
+  const onPointerUp = () => {
+    if (wasPointerDownRef.current) {
+      wasPointerDownRef.current = false;
+      if (Math.abs(velocityRef.current) > 0.4) {
+        startInertia(velocityRef.current);
+      }
+    }
+  };
+
+  const onPointerLeave = () => {
+    if (wasPointerDownRef.current) {
+      wasPointerDownRef.current = false;
+      if (Math.abs(velocityRef.current) > 0.4) {
+        startInertia(velocityRef.current);
+      }
+    }
+  };
 
   return (
     <div className={`relative min-h-[calc(100vh-80px)] pt-24 pb-20 px-6 max-w-7xl mx-auto z-10 overflow-hidden ${isLightMode ? 'text-slate-800' : 'text-white'}`}>
       <style>{`
-        @keyframes friend-marquee {
-          from { transform: translate3d(0, 0, 0); }
-          to   { transform: translate3d(-50%, 0, 0); }
-        }
-        .friend-marquee-track {
-          animation: friend-marquee linear infinite;
-          will-change: transform;
-        }
-        .friend-marquee-mask:hover .friend-marquee-track,
-        .friend-marquee-mask:focus-within .friend-marquee-track {
-          animation-play-state: paused;
-        }
         .friend-marquee-mask {
           -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
                   mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
@@ -377,7 +478,7 @@ export default function Team({ isLightMode = false }: TeamProps) {
         </div>
       </div>
 
-      {/* Infinite Horizontal Carousel */}
+      {/* Cursor-follow Infinite Horizontal Carousel */}
       <div className="relative">
         <AnimatePresence mode="wait">
           <motion.div
@@ -387,16 +488,30 @@ export default function Team({ isLightMode = false }: TeamProps) {
             exit={{ opacity: 0, x: -60 }}
             transition={{ duration: 0.35, ease: 'easeOut' }}
           >
-            <div className="friend-marquee-mask">
+            <div
+              ref={containerRef}
+              onPointerEnter={onPointerEnter}
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerLeave={onPointerLeave}
+              onPointerCancel={onPointerUp}
+              className="friend-marquee-mask relative overflow-hidden cursor-grab active:cursor-grabbing select-none"
+              style={{ touchAction: 'none' }}
+            >
               <div
-                className="friend-marquee-track flex w-max items-stretch"
-                style={{ animationDuration: `${trackDuration}s` }}
+                ref={trackRef}
+                className="flex w-max items-stretch"
+                style={{ transform: `translate3d(${x}px, 0, 0)`, willChange: 'transform' }}
               >
                 {filteredMembers.map((member, idx) => (
                   <CarouselCard key={`${member.name}-a-${idx}`} member={member} isLightMode={isLightMode} />
                 ))}
                 {filteredMembers.map((member, idx) => (
                   <CarouselCard key={`${member.name}-b-${idx}`} member={member} isLightMode={isLightMode} ariaHidden />
+                ))}
+                {filteredMembers.map((member, idx) => (
+                  <CarouselCard key={`${member.name}-c-${idx}`} member={member} isLightMode={isLightMode} ariaHidden />
                 ))}
               </div>
             </div>
@@ -405,7 +520,7 @@ export default function Team({ isLightMode = false }: TeamProps) {
 
         {/* Controls hint */}
         <p className={`relative text-center mt-8 text-[9px] font-mono uppercase tracking-[0.2em] ${isLightMode ? 'text-slate-400' : 'text-slate-500'}`}>
-          Hover to pause
+          Move cursor left ⇠ scrolls left &nbsp;·&nbsp; move cursor right ⇢ scrolls right
         </p>
       </div>
 
