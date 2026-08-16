@@ -116,7 +116,7 @@ const AFFIRMATIONS: DeityAffirmation[] = [
   }
 ];
 
-export default function DailyAffirmation() {
+export default function DailyAffirmation({ isLightMode = false }: { isLightMode?: boolean }) {
   const [current, setCurrent] = useState<DeityAffirmation | null>(null);
   const [animating, setAnimating] = useState(false);
 
@@ -146,20 +146,20 @@ export default function DailyAffirmation() {
     >
       {/* Decorative background glow matching the rolled deity */}
       <div 
-        className="absolute inset-0 rounded-[28px] blur-2xl transition-all duration-700 opacity-20 -z-10" 
+        className={`absolute inset-0 rounded-[28px] blur-2xl transition-all duration-700 -z-10 ${isLightMode ? 'opacity-30' : 'opacity-20'}`} 
         style={{ backgroundColor: current.bgGlow }}
       />
 
-      <div className={`p-8 md:p-10 rounded-[28px] border-2 bg-sage-dark/60 backdrop-blur-md transition-all duration-500 hover:border-sage/40 ${current.borderColor}`}>
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b border-brown/30 pb-4">
+      <div className={`p-8 md:p-10 rounded-[28px] border-2 backdrop-blur-md transition-all duration-500 ${isLightMode ? 'bg-[#f4f0e6]/95 border-[#dfd2be] hover:border-[#c9a45c]/60' : `bg-sage-dark/60 ${current.borderColor} hover:border-sage/40`}`}>
+        <div className={`flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6 border-b pb-4 ${isLightMode ? 'border-[#dfd2be]' : 'border-brown/30'}`}>
           <div className="flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl bg-white/5 flex items-center justify-center border border-white/10 ${current.colorClass}`}>
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center border ${isLightMode ? 'bg-white/70 border-[#dfd2be]' : 'bg-white/5 border-white/10'} ${isLightMode ? 'text-[#9a7428]' : current.colorClass}`}>
               <Icon className="w-5 h-5 animate-pulse" />
             </div>
             <div>
-              <span className="text-[10px] font-mono tracking-widest text-sage uppercase">Daily Deity Encouragement</span>
-              <h4 className="font-serif text-lg text-white font-medium">
-                {current.deity} <span className="text-white/40 font-sans text-sm font-light">({current.alias})</span>
+              <span className="text-[10px] font-mono tracking-widest text-[#c9a45c] uppercase">Daily Deity Encouragement</span>
+              <h4 className={`font-serif text-lg font-medium ${isLightMode ? 'text-stone-900' : 'text-white'}`}>
+                {current.deity} <span className={`font-sans text-sm font-light ${isLightMode ? 'text-stone-500' : 'text-white/40'}`}>({current.alias})</span>
               </h4>
             </div>
           </div>
@@ -167,7 +167,10 @@ export default function DailyAffirmation() {
           <button
             onClick={rollAffirmation}
             disabled={animating}
-            className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-periwinkle hover:text-white transition-colors border border-periwinkle/20 hover:border-periwinkle bg-white/5 px-3 py-1.5 rounded-lg"
+            className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] transition-colors border px-3 py-1.5 rounded-lg ${isLightMode
+              ? 'text-indigo-600 hover:text-indigo-800 border-indigo-600/30 hover:border-indigo-600 bg-white/70'
+              : 'text-periwinkle hover:text-white border-periwinkle/20 hover:border-periwinkle bg-white/5'
+              }`}
           >
             <RefreshCw className={`w-3 h-3 ${animating ? 'animate-spin' : ''}`} />
             Seek another blessing
@@ -184,10 +187,10 @@ export default function DailyAffirmation() {
               transition={{ duration: 0.3 }}
               className="text-center"
             >
-              <p className="font-serif italic text-base md:text-lg text-slate-100 leading-relaxed tracking-wide px-4">
+              <p className={`font-serif italic text-base md:text-lg leading-relaxed tracking-wide px-4 ${isLightMode ? 'text-slate-700' : 'text-slate-100'}`}>
                 {current.message}
               </p>
-              <div className="mt-4 text-[10px] uppercase tracking-[0.14em] text-sage font-medium opacity-60">
+              <div className={`mt-4 text-[10px] uppercase tracking-[0.14em] font-medium ${isLightMode ? 'text-emerald-800 opacity-80' : 'text-sage opacity-60'}`}>
                 — {current.title}
               </div>
             </motion.div>

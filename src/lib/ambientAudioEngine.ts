@@ -159,7 +159,7 @@ class AmbientAudioEngine {
   private filterNode: BiquadFilterNode | null = null;
   private lfoNode: OscillatorNode | null = null;
   private lfoGain: GainNode | null = null;
-  private targetVolume: number = 0.35;
+  private targetVolume: number = 1.0;
   private listeners: Set<(isPlaying: boolean, archetypeId: string) => void> = new Set();
 
   constructor() {

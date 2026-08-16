@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Users, Code, Paintbrush, HeartPulse, Sparkles, Activity, 
-  ShieldCheck, GraduationCap, Award, Info, Scale, ExternalLink, Linkedin 
+import {
+  Users, Code, HeartPulse, Scale, Sparkles, Activity, Linkedin
 } from 'lucide-react';
 
 interface TeamProps {
@@ -22,127 +21,115 @@ interface Member {
   linkedin?: string;
 }
 
-interface TeamMemberCardProps {
-  member: Member;
-  isLightMode: boolean;
-  idx: number;
-}
+const categoryIcon = (category: Member['category']) =>
+  category === 'tech' ? Code : category === 'medical' ? HeartPulse : Scale;
 
-// Sub-component to manage image fallback state cleanly
-const TeamMemberCard: React.FC<TeamMemberCardProps> = ({ member, isLightMode, idx }) => {
-  const [imageError, setImageError] = useState(false);
-  const IconComponent = member.icon || (member.category === 'tech' ? Code : member.category === 'medical' ? HeartPulse : Scale);
+const categoryTint = (category: Member['category'], isLightMode: boolean) =>
+  category === 'tech'
+    ? isLightMode ? 'from-blue-500/25 via-blue-500/10 to-transparent' : 'from-blue-500/30 via-blue-500/10 to-transparent'
+    : category === 'medical'
+      ? isLightMode ? 'from-emerald-500/25 via-emerald-500/10 to-transparent' : 'from-emerald-500/30 via-emerald-500/10 to-transparent'
+      : category === 'mascot'
+        ? isLightMode ? 'from-pink-500/25 via-pink-500/10 to-transparent' : 'from-pink-500/30 via-pink-500/10 to-transparent'
+        : isLightMode ? 'from-amber-500/25 via-amber-500/10 to-transparent' : 'from-amber-500/30 via-amber-500/10 to-transparent';
 
-  // Smart preview thumbnail URL from Google Drive or direct image URL
-  const imageUrl = member.imageUrl 
-    ? member.imageUrl 
-    : member.id 
-      ? `https://drive.google.com/thumbnail?id=${member.id}&sz=w500` 
+const initialsOf = (name: string) =>
+  name.split(' ').map(n => n[0]).join('').slice(0, 2);
+
+// Shared image resolution helper
+const resolveImageUrl = (member: Member) =>
+  member.imageUrl
+    ? member.imageUrl
+    : member.id
+      ? `https://drive.google.com/thumbnail?id=${member.id}&sz=w500`
       : null;
 
-  // Initials for avatar fallback
-  const initials = member.name
-    .split(' ')
-    .map(n => n[0])
-    .join('')
-    .slice(0, 2);
+interface CarouselCardProps {
+  member: Member;
+  isLightMode: boolean;
+  ariaHidden?: boolean;
+}
+
+const CarouselCard: React.FC<CarouselCardProps> = ({ member, isLightMode, ariaHidden }) => {
+  const [imageError, setImageError] = useState(false);
+  const IconComponent = member.icon || categoryIcon(member.category);
+  const imageUrl = resolveImageUrl(member);
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 25 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -15 }}
-      transition={{ delay: idx * 0.04, duration: 0.4 }}
-      className={`p-6 rounded-[24px] border-2 flex flex-col md:flex-row gap-5 items-center md:items-start transition-all duration-300 relative group ${
-        isLightMode 
-          ? 'bg-[#f4f0e6] border-[#dfd2be] text-slate-800 hover:border-[#c9a45c]/50 hover:shadow-[0_8px_30px_rgba(201,164,92,0.12)]' 
-          : 'bg-[#07130e] border-[#112d24] text-white hover:border-[#c9a45c]/50 hover:bg-[#0a1e16] hover:shadow-[0_0_25px_rgba(201,164,92,0.08)]'
-      }`}
+    <motion.article
+      layout
+      aria-hidden={ariaHidden}
+      className={`mx-3 w-[290px] md:w-[320px] shrink-0 rounded-[24px] border-2 overflow-hidden flex flex-col group transition-all duration-300 hover:-translate-y-1.5 ${isLightMode
+        ? 'bg-white/80 border-[#dfd2be] text-slate-800 hover:border-[#c9a45c]/60 hover:shadow-[0_18px_50px_rgba(201,164,92,0.25)]'
+        : 'bg-[#07130e]/90 border-[#112d24] text-white hover:border-[#c9a45c]/50 hover:shadow-[0_0_40px_rgba(201,164,92,0.15)]'
+        }`}
     >
-      {/* Decorative Corner Accent */}
-      <div className="absolute top-0 right-0 w-8 h-8 rounded-tr-[22px] border-t-2 border-r-2 border-transparent group-hover:border-[#c9a45c]/30 transition-all duration-300 pointer-events-none" />
-
-      {/* Portrait / Avatar Section */}
-      <div className="shrink-0 relative">
-        <div className={`w-24 h-24 md:w-28 md:h-28 rounded-2xl overflow-hidden border-2 relative flex items-center justify-center transition-all duration-300 group-hover:scale-[1.03] ${
-          isLightMode ? 'border-[#dfd2be] bg-white' : 'border-[#112d24] bg-black/40'
-        }`}>
-          {imageUrl && !imageError ? (
-            <img 
-              src={imageUrl} 
-              alt={member.name}
-              referrerPolicy="no-referrer"
-              onError={() => setImageError(true)}
-              className={`w-full h-full object-cover grayscale-[20%] group-hover:grayscale-0 transition-all duration-500 ${
-                member.name === 'Sarvesh Pahilajani' 
-                  ? 'scale-[1.9] origin-[50%_17%] object-top' 
-                  : member.name === 'Rishabh Kothiyal'
-                    ? 'scale-[1.3] origin-[50%_18%] object-top'
-                    : 'object-center'
+      {/* Portrait */}
+      <div className={`relative h-44 shrink-0 overflow-hidden border-b-2 ${isLightMode ? 'border-[#dfd2be]/60' : 'border-[#112d24]'}`}>
+        <div className={`absolute inset-0 bg-gradient-to-br ${categoryTint(member.category, isLightMode)}`} />
+        {imageUrl && !imageError ? (
+          <img
+            src={imageUrl}
+            alt={member.name}
+            referrerPolicy="no-referrer"
+            onError={() => setImageError(true)}
+            className={`w-full h-full object-cover grayscale-[25%] group-hover:grayscale-0 group-hover:scale-[1.05] transition-all duration-500 ${member.name === 'Sarvesh Pahilajani'
+              ? 'scale-[1.9] origin-[50%_17%] object-top'
+              : member.name === 'Rishabh Kothiyal'
+                ? 'scale-[1.3] origin-[50%_18%] object-top'
+                : 'object-center'
               }`}
-            />
-          ) : (
-            <div className={`w-full h-full flex flex-col items-center justify-center font-serif text-xl font-bold relative ${
-              member.category === 'tech' 
-                ? 'bg-blue-500/10 text-blue-400' 
-                : member.category === 'medical' 
-                  ? 'bg-emerald-500/10 text-emerald-400' 
-                  : 'bg-amber-500/10 text-[#c9a45c]'
-            }`}>
-              {/* Backing subtle pattern */}
-              <div className="absolute inset-0 opacity-10 flex items-center justify-center font-mono text-[9px] overflow-hidden select-none">
-                {Array(5).fill(initials).join(' ')}
-              </div>
-              <span className="relative tracking-wider">{initials}</span>
-              <IconComponent className="w-4 h-4 opacity-45 mt-1.5 absolute bottom-3" />
+          />
+        ) : (
+          <div className="w-full h-full flex flex-col items-center justify-center gap-2 relative">
+            <div className="absolute inset-0 opacity-10 flex flex-wrap items-center justify-center font-mono text-[10px] overflow-hidden select-none gap-3 px-4">
+              {Array(8).fill(initialsOf(member.name)).map((s, i) => (
+                <span key={i}>{s}</span>
+              ))}
             </div>
-          )}
-        </div>
+            <span className="relative font-serif text-5xl font-bold tracking-widest drop-shadow-lg">{initialsOf(member.name)}</span>
+            <IconComponent className={`relative w-5 h-5 opacity-40 ${member.color.split(' ')[0]}`} />
+          </div>
+        )}
 
-        {/* Floating miniature category badge on bottom of portrait */}
-        <div className={`absolute -bottom-2 -right-2 p-1.5 rounded-xl border-2 flex items-center justify-center shadow-md ${
-          isLightMode ? 'bg-white border-[#dfd2be]' : 'bg-[#07130e] border-[#112d24]'
-        }`}>
+        {/* Badge chip */}
+        <span className={`absolute top-3 left-3 text-[8px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold backdrop-blur-sm ${member.color}`}>
+          {member.badge}
+        </span>
+
+        {/* Category icon pill */}
+        <div className={`absolute bottom-3 right-3 p-1.5 rounded-xl border-2 flex items-center justify-center shadow-md ${isLightMode ? 'bg-white border-[#dfd2be]' : 'bg-[#07130e]/80 border-[#112d24]'}`}>
           <IconComponent className={`w-3.5 h-3.5 ${member.color.split(' ')[0]}`} />
         </div>
       </div>
 
-      {/* Details Section */}
-      <div className="space-y-3 flex-1 text-center md:text-left">
-        <div className="space-y-1">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-1.5">
-            <h3 className="font-serif text-lg font-bold text-[#c9a45c] group-hover:text-amber-300 transition-colors duration-300">
-              {member.name}
-            </h3>
-            <span className={`text-[8px] font-mono uppercase tracking-widest px-2.5 py-1 rounded-full border font-bold inline-block mx-auto md:mx-0 shrink-0 ${member.color}`}>
-              {member.badge}
-            </span>
-          </div>
-          <p className="text-[10px] uppercase font-mono tracking-wider text-slate-400 font-semibold">{member.role}</p>
+      {/* Body */}
+      <div className="p-5 space-y-2.5 flex-1 flex flex-col">
+        <div>
+          <h3 className="font-serif text-lg font-bold text-[#c9a45c] group-hover:text-amber-300 transition-colors duration-300">
+            {member.name}
+          </h3>
+          <p className="text-[9px] uppercase font-mono tracking-wider text-slate-400 font-semibold mt-1">{member.role}</p>
         </div>
-        <p className={`text-xs leading-relaxed opacity-85 ${isLightMode ? 'text-slate-600' : 'text-slate-300'}`}>
+        <p className={`text-xs leading-relaxed line-clamp-4 opacity-85 ${isLightMode ? 'text-slate-600' : 'text-slate-300'}`}>
           {member.description}
         </p>
-
-        {/* Action Link for authentic presentation */}
         {member.linkedin && (
-          <div className="pt-1 flex items-center justify-center md:justify-start gap-1.5">
-            <a 
+          <div className="pt-1 mt-auto">
+            <a
               href={member.linkedin}
               target="_blank"
               rel="noopener noreferrer"
-              className={`text-[9px] font-mono tracking-wider uppercase flex items-center gap-1.5 transition-all ${
-                isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-slate-400 hover:text-[#c9a45c]'
-              }`}
+              className={`inline-flex items-center gap-1.5 text-[9px] font-mono tracking-wider uppercase transition-all ${isLightMode ? 'text-slate-500 hover:text-slate-800' : 'text-slate-400 hover:text-[#c9a45c]'}`}
             >
               Verify Credentials <Linkedin className="w-2.5 h-2.5" />
             </a>
           </div>
         )}
       </div>
-    </motion.div>
+    </motion.article>
   );
-}
+};
 
 export default function Team({ isLightMode = false }: TeamProps) {
   const [activeFilter, setActiveFilter] = useState<'all' | 'tech' | 'medical' | 'strategy'>('all');
@@ -295,9 +282,8 @@ export default function Team({ isLightMode = false }: TeamProps) {
     }
   ];
 
-  // Filter members based on active tab
   const filteredMembers = members.filter(member => {
-    if (activeFilter === 'all') return member.category !== 'mascot'; // Hide mascot from main grids to keep it professional, or keep it. Let's show mascot under strategy/all
+    if (activeFilter === 'all') return member.category !== 'mascot';
     return member.category === activeFilter;
   });
 
@@ -308,32 +294,58 @@ export default function Team({ isLightMode = false }: TeamProps) {
     { id: 'strategy', label: 'Strategic & Legal', count: members.filter(m => m.category === 'strategy').length }
   ] as const;
 
+  const trackDuration = Math.max(28, filteredMembers.length * 5);
+
   return (
-    <div className="relative min-h-[calc(100vh-80px)] text-white pt-24 pb-20 px-6 max-w-5xl mx-auto z-10 flex flex-col justify-center">
+    <div className={`relative min-h-[calc(100vh-80px)] pt-24 pb-20 px-6 max-w-7xl mx-auto z-10 overflow-hidden ${isLightMode ? 'text-slate-800' : 'text-white'}`}>
+      <style>{`
+        @keyframes friend-marquee {
+          from { transform: translate3d(0, 0, 0); }
+          to   { transform: translate3d(-50%, 0, 0); }
+        }
+        .friend-marquee-track {
+          animation: friend-marquee linear infinite;
+          will-change: transform;
+        }
+        .friend-marquee-mask:hover .friend-marquee-track,
+        .friend-marquee-mask:focus-within .friend-marquee-track {
+          animation-play-state: paused;
+        }
+        .friend-marquee-mask {
+          -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+                  mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+        }
+      `}</style>
+
+      {/* Ambient glows */}
+      <div className="pointer-events-none absolute -top-32 left-1/2 -translate-x-1/2 w-[700px] h-[380px] rounded-full bg-[#c9a45c]/10 blur-[130px]" />
+      <div className="pointer-events-none absolute bottom-0 right-[-10%] w-[500px] h-[300px] rounded-full bg-emerald-500/5 blur-[120px]" />
+
       {/* Header Banner */}
-      <div className="text-center mb-8 space-y-4">
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="inline-flex p-3 bg-[#c9a45c]/10 text-[#c9a45c] rounded-2xl border border-[#c9a45c]/25 mb-1"
+      <div className="relative text-center mb-10 space-y-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.8, rotate: -8 }}
+          animate={{ opacity: 1, scale: 1, rotate: 0 }}
+          transition={{ duration: 0.5 }}
+          className="inline-flex p-3 bg-[#c9a45c]/10 text-[#c9a45c] rounded-2xl border border-[#c9a45c]/25 mb-1 shadow-[0_0_30px_rgba(201,164,92,0.15)]"
         >
           <Users className="w-6 h-6" />
         </motion.div>
-        <motion.span 
+        <motion.span
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="text-[10px] font-mono uppercase tracking-[0.25em] text-[#c9a45c] block font-bold"
         >
           People Behind the Sanctuary
         </motion.span>
-        <motion.h1 
-          initial={{ opacity: 0, y: 10 }}
+        <motion.h1
+          initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          className="font-serif text-3xl md:text-5xl font-bold tracking-tight text-white"
+          className={`font-serif text-3xl md:text-5xl font-bold tracking-tight ${isLightMode ? 'text-slate-900' : 'text-white'}`}
         >
           Our Interdisciplinary Team
         </motion.h1>
-        <motion.p 
+        <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className={`text-sm max-w-xl mx-auto leading-relaxed ${isLightMode ? 'text-slate-600' : 'text-sage'}`}
@@ -343,28 +355,21 @@ export default function Team({ isLightMode = false }: TeamProps) {
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex justify-center mb-10">
-        <div className={`p-1 rounded-2xl border flex flex-wrap justify-center gap-1.5 md:gap-2 max-w-full ${
-          isLightMode ? 'bg-[#f4f0e6] border-[#dfd2be]' : 'bg-black/30 border-brown'
-        }`}>
+      <div className="relative flex justify-center mb-12">
+        <div className={`p-1 rounded-2xl border flex flex-wrap justify-center gap-1.5 md:gap-2 max-w-full ${isLightMode ? 'bg-white/70 border-[#dfd2be]' : 'bg-black/30 border-brown'}`}>
           {filterTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveFilter(tab.id)}
-              className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider font-bold transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
-                activeFilter === tab.id
-                  ? 'bg-[#c9a45c] text-black shadow-md'
-                  : isLightMode
-                    ? 'text-slate-700 hover:bg-slate-200/50 hover:text-slate-950'
-                    : 'text-slate-300 hover:bg-[#c9a45c]/10 hover:text-white'
-              }`}
+              className={`px-4 py-2 rounded-xl text-xs font-mono uppercase tracking-wider font-bold transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${activeFilter === tab.id
+                ? 'bg-[#c9a45c] text-black shadow-md'
+                : isLightMode
+                  ? 'text-slate-700 hover:bg-slate-200/50 hover:text-slate-950'
+                  : 'text-slate-300 hover:bg-[#c9a45c]/10 hover:text-white'
+                }`}
             >
               <span>{tab.label}</span>
-              <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded-md ${
-                activeFilter === tab.id
-                  ? 'bg-black/15 text-black'
-                  : 'bg-black/30 text-slate-400'
-              }`}>
+              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${activeFilter === tab.id ? 'bg-black/15 text-black' : 'bg-black/30 text-slate-400'}`}>
                 {tab.count}
               </span>
             </button>
@@ -372,41 +377,52 @@ export default function Team({ isLightMode = false }: TeamProps) {
         </div>
       </div>
 
-      {/* Team Grid */}
+      {/* Infinite Horizontal Carousel */}
       <div className="relative">
-        <motion.div 
-          layout 
-          className="grid grid-cols-1 lg:grid-cols-2 gap-6"
-        >
-          <AnimatePresence mode="popLayout">
-            {filteredMembers.map((member, idx) => (
-              <TeamMemberCard 
-                key={member.name} 
-                member={member} 
-                isLightMode={isLightMode} 
-                idx={idx} 
-              />
-            ))}
-          </AnimatePresence>
-        </motion.div>
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={activeFilter}
+            initial={{ opacity: 0, x: 60 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -60 }}
+            transition={{ duration: 0.35, ease: 'easeOut' }}
+          >
+            <div className="friend-marquee-mask">
+              <div
+                className="friend-marquee-track flex w-max items-stretch"
+                style={{ animationDuration: `${trackDuration}s` }}
+              >
+                {filteredMembers.map((member, idx) => (
+                  <CarouselCard key={`${member.name}-a-${idx}`} member={member} isLightMode={isLightMode} />
+                ))}
+                {filteredMembers.map((member, idx) => (
+                  <CarouselCard key={`${member.name}-b-${idx}`} member={member} isLightMode={isLightMode} ariaHidden />
+                ))}
+              </div>
+            </div>
+          </motion.div>
+        </AnimatePresence>
+
+        {/* Controls hint */}
+        <p className={`relative text-center mt-8 text-[9px] font-mono uppercase tracking-[0.2em] ${isLightMode ? 'text-slate-400' : 'text-slate-500'}`}>
+          Hover to pause
+        </p>
       </div>
 
-      {/* Mascot Corner Segment (Subtle bottom bar) */}
-      <motion.div 
+      {/* Mascot Corner Segment */}
+      <motion.div
         initial={{ opacity: 0 }}
         whileInView={{ opacity: 1 }}
         viewport={{ once: true }}
-        className={`mt-16 p-6 rounded-[24px] border-2 flex flex-col md:flex-row items-center justify-between gap-6 ${
-          isLightMode ? 'bg-[#f4f0e6]/60 border-[#dfd2be]' : 'bg-brown-deep/20 border-brown'
-        }`}
+        className={`relative mt-16 p-6 rounded-[24px] border-2 flex flex-col md:flex-row items-center justify-between gap-6 ${isLightMode ? 'bg-white/60 border-[#dfd2be]' : 'bg-brown-deep/20 border-brown'}`}
       >
         <div className="flex items-center gap-4 text-center md:text-left flex-col md:flex-row">
-          <div className="p-3 bg-pink-500/10 text-pink-400 border border-pink-500/20 rounded-full shrink-0">
+          <div className="p-3 bg-pink-500/10 text-pink-400 border border-pink-500/20 rounded-full shrink-0 shadow-[0_0_25px_rgba(236,72,153,0.15)]">
             <Sparkles className="w-6 h-6 text-pink-400 animate-spin" style={{ animationDuration: '6s' }} />
           </div>
           <div>
             <h4 className="font-serif text-lg font-bold text-[#c9a45c]">Looking for Tony?</h4>
-            <p className="text-xs text-slate-300 leading-relaxed max-w-md mt-1">
+            <p className={`text-xs leading-relaxed max-w-md mt-1 ${isLightMode ? 'text-slate-600' : 'text-slate-300'}`}>
               Our chief joy advisor is always on active duty! Find him floating in his chat container at the bottom right corner of your sanctuary, ready to fetch comfort and bark words of support.
             </p>
           </div>
@@ -420,3 +436,4 @@ export default function Team({ isLightMode = false }: TeamProps) {
     </div>
   );
 }
+

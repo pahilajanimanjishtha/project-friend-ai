@@ -24,6 +24,7 @@ import HeyGenCallView from './components/HeyGenCallView';
 import TavusCallView from './components/TavusCallView';
 import SelfHostedAvatarWorkspace from './components/SelfHostedAvatarWorkspace';
 import LoginPage from './components/LoginPage';
+import GamesCorner from './components/GamesCorner';
 import { ambientEngine } from './lib/ambientAudioEngine';
 import { auth } from './lib/firebase';
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth';
@@ -72,7 +73,8 @@ export type ViewType =
   | 'churn'
   | 'login'
   | 'customize'
-  | 'self-hosted';
+  | 'self-hosted'
+  | 'games';
 
 const getViewFromPath = (pathName: string): ViewType => {
   const cleanPath = pathName.toLowerCase().replace(/\/$/, '') || '/';
@@ -140,6 +142,8 @@ const getViewFromPath = (pathName: string): ViewType => {
     case '/login':
     case '/signin':
       return 'login';
+    case '/games':
+      return 'games';
     case '/':
     case '/home':
     default:
@@ -175,6 +179,7 @@ const getPathFromView = (v: ViewType): string => {
     case 'decoy': return '/decoy';
     case 'self-hosted': return '/self-hosted';
     case 'login': return '/login';
+    case 'games': return '/games';
     case 'home':
     default:
       return '/';
@@ -361,7 +366,7 @@ export default function App() {
 
   // Check extreme crisis override
   const isExtremeCrisis = localStorage.getItem('extreme_crisis_flag') === 'true';
-  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat', 'customize', 'self-hosted'].includes(view);
+  const isPublicView = ['home', 'pantheon', 'vision-mission', 'team', 'policy', 'waitlist', 'decoy', 'login', 'videosanctuary', 'chat', 'customize', 'self-hosted', 'games'].includes(view);
   const requiresAuth = !isLoggedIn || !user;
 
   // Active view determination
@@ -390,7 +395,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="relative z-10 pt-20 md:pt-24 pb-12">
+      <main className="relative z-10 pt-[88px] md:pt-[104px] pb-12">
         {activeView === 'home' && broadcastMessage && (
           <motion.div 
             initial={{ opacity: 0, y: -20 }}
@@ -422,7 +427,7 @@ export default function App() {
           </motion.div>
         )}
 
-        {activeView === 'home' && <Home setView={setView} isLightMode={isLightMode} />}
+        {activeView === 'home' && <Home setView={setView} setSelectedCharId={setSelectedCharId} isLightMode={isLightMode} />}
         {activeView === 'pantheon' && (
           <PantheonGrid setView={setView} setSelectedCharId={setSelectedCharId} isLightMode={isLightMode} />
         )}
@@ -506,6 +511,9 @@ export default function App() {
         {activeView === 'music' && (
           <MusicGenerator isLightMode={isLightMode} />
         )}
+        {activeView === 'games' && (
+          <GamesCorner isLightMode={isLightMode} setView={setView} />
+        )}
         {activeView === 'admin' && (
           <AdminPanel isLightMode={isLightMode} setView={setView} />
         )}
@@ -548,11 +556,22 @@ export default function App() {
       {/* Floating Dog Chatbot Widget */}
       <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
         <TonyFloatingChat isLightMode={isLightMode} />
+
+        {/* Quick Panic Escape Widget (Pandora's Box) - DISABLED FOR NOW
+        <button
+          onClick={() => setView('decoy')}
+          title="Pandora's Box - Instant Safe Exit"
+          className="flex items-center gap-2 font-serif text-[10px] tracking-[0.14em] uppercase text-white bg-brown-deep/90 border-2 border-[#e07070]/40 hover:border-[#e07070] px-4 py-3 rounded-xl font-bold transition-all hover:scale-[1.04] shadow-[0_0_20px_rgba(224,112,112,0.25)] cursor-pointer backdrop-blur-md"
+        >
+          <ShieldAlert className="w-3.5 h-3.5 text-[#e07070] animate-pulse" />
+          Pandora's Box
+        </button>
+        */}
       </div>
 
       {/* Small Ambient Footer */}
-      <footer className="relative z-10 py-12 border-t border-white/5 bg-[#03070f]/40 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-white/30 text-xs text-center md:text-left">
+      <footer className={`relative z-10 py-12 border-t backdrop-blur-md transition-colors duration-500 ${isLightMode ? 'bg-white/40 border-[#dfd2be]' : 'bg-[#03070f]/40 border-white/5'}`}>
+        <div className={`max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-4 text-xs text-center md:text-left ${isLightMode ? 'text-slate-600' : 'text-white/30'}`}>
           <p className="font-serif tracking-wider uppercase text-[10px]">
             Friend AI &middot; The Pantheon Companion Sanctuary
           </p>
@@ -560,8 +579,8 @@ export default function App() {
             <button onClick={() => setView('home')} className="hover:text-[#c9a45c] transition-colors">
               Home
             </button>
-            <button onClick={() => setView('pantheon')} className="hover:text-[#c9a45c] transition-colors">
-              Storyboard
+            <button onClick={() => setView('team')} className="hover:text-[#c9a45c] transition-colors">
+              Team
             </button>
             <button onClick={() => setView('chat')} className="hover:text-[#c9a45c] transition-colors">
               Nova Call 🎥
@@ -569,14 +588,17 @@ export default function App() {
             <button onClick={() => setView('sanctuary')} className="hover:text-[#c9a45c] transition-colors">
               Sanctuary
             </button>
-            <button onClick={() => setView('pitch')} className="hover:text-[#c9a45c] transition-colors">
-              Deck
+            <button onClick={() => setView('games')} className="hover:text-[#c9a45c] transition-colors">
+              Games
             </button>
-            <button onClick={() => setView('policy')} className="hover:text-[#c9a45c] transition-colors text-[#c9a45c]/90 font-semibold">
+            <button onClick={() => setView('vision-mission')} className="hover:text-[#c9a45c] transition-colors">
+              Vision &amp; Mission
+            </button>
+            <button onClick={() => setView('policy')} className={`hover:text-[#c9a45c] transition-colors font-semibold ${isLightMode ? 'text-[#9a7428]' : 'text-[#c9a45c]/90'}`}>
               Terms &amp; Policy 📜
             </button>
-            <button onClick={() => setView('waitlist')} className="text-[#c9a45c] hover:text-[#c9a45c]/85 transition-colors font-bold">
-              Contribute
+            <button onClick={() => setView('waitlist')} className={`transition-colors font-bold ${isLightMode ? 'text-[#9a7428] hover:text-[#7a5c1f]' : 'text-[#c9a45c] hover:text-[#c9a45c]/85'}`}>
+              Contribute 🏛️
             </button>
             <button onClick={() => setView('admin')} className="text-amber-500/80 hover:text-amber-500 transition-colors flex items-center gap-1 font-bold">
               Admin Area ⚙️

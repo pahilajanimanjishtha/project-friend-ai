@@ -3,21 +3,31 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Sparkles, Compass, ShieldAlert, ShieldCheck, HeartHandshake, Eye, Palette, Activity, User,
   MessageSquare, PenTool, BarChart3, Mail, Users, HeartPulse, BookOpen, ChevronRight, HelpCircle,
-  Cloud, Music, Pill, Video, StickyNote
+  Cloud, Music, Pill, Video, StickyNote, ChevronLeft, CircleDot, Flame, Star, Zap, Shield, Volume2
 } from 'lucide-react';
 import DailyAffirmation from './DailyAffirmation';
 import SanctuaryTools from './SanctuaryTools';
+import { CHARACTERS } from '../data';
+import { ambientEngine } from '../lib/ambientAudioEngine';
 
 interface HomeProps {
-  setView: (view: 'home' | 'pantheon' | 'chat' | 'pitch' | 'decoy' | 'oracle' | 'journal' | 'music') => void;
+  setView: (view: 'home' | 'pantheon' | 'chat' | 'pitch' | 'decoy' | 'oracle' | 'journal' | 'music' | 'games') => void;
+  setSelectedCharId: (id: string) => void;
   isLightMode?: boolean;
 }
 
-export default function Home({ setView, isLightMode = false }: HomeProps) {
+export default function Home({ setView, setSelectedCharId, isLightMode = false }: HomeProps) {
   const [savedProfile, setSavedProfile] = useState<any | null>(null);
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [initialSyncTab, setInitialSyncTab] = useState<'drive' | 'gmail' | 'calendar' | 'tasks' | 'sheets' | 'contacts' | 'forms' | 'tony' | 'docs' | 'slides' | 'meet' | 'classroom' | undefined>(undefined);
   const toolRef = useRef<HTMLDivElement>(null);
+  const guidesTrackRef = useRef<HTMLDivElement>(null);
+  const guidesScrollerRef = useRef<HTMLDivElement>(null);
+  const [guideOffset, setGuideOffset] = useState(0);
+  const guideDirRef = useRef(1); // 1 = glide left (right-to-left), -1 = glide right (left-to-right)
+  const guideOffsetRef = useRef(0);
+  const guidePausedRef = useRef(false);
+  const [flippedGuides, setFlippedGuides] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     const stored = localStorage.getItem('oracleProfile');
@@ -36,6 +46,63 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
       toolRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   }, [activeTool]);
+
+  const handleGuidesMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const track = guidesTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    // cursor on left half => glide left-to-right (negative direction)
+    // cursor on right half => glide right-to-left (positive direction)
+    const ratio = (e.clientX - rect.left) / rect.width;
+    guideDirRef.current = ratio < 0.5 ? -1 : 1;
+  };
+
+  useEffect(() => {
+    let raf = 0;
+    const loop = () => {
+      const track = guidesTrackRef.current;
+      const scroller = guidesScrollerRef.current;
+      if (track && scroller && !guidePausedRef.current) {
+        const max = scroller.scrollWidth - track.clientWidth;
+        if (max > 0) {
+          guideOffsetRef.current += guideDirRef.current * 0.8;
+          if (guideOffsetRef.current >= max) guideOffsetRef.current = 0;
+          if (guideOffsetRef.current < 0) guideOffsetRef.current = max;
+          setGuideOffset(guideOffsetRef.current);
+        }
+      }
+      raf = requestAnimationFrame(loop);
+    };
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  const getGuideIcon = (name: string, color: string) => {
+    const cls = `w-8 h-8 ${color}`;
+    switch (name) {
+      case 'butterfly': return <Sparkles className={cls} />;
+      case 'boulder': return <CircleDot className={cls} />;
+      case 'eye': return <Eye className={cls} />;
+      case 'pomegranate': return <Flame className={cls} />;
+      case 'grapes': return <Compass className={cls} />;
+      case 'star': return <Star className={cls} />;
+      case 'lightning': return <Zap className={cls} />;
+      case 'trident': return <Compass className={cls} />;
+      case 'lyre': return <Music className={cls} />;
+      case 'shield': return <Shield className={cls} />;
+      case 'fire': return <Flame className={cls} />;
+      default: return <Sparkles className={cls} />;
+    }
+  };
+
+  const handleGuideChat = (charId: string) => {
+    setSelectedCharId(charId);
+    setView('chat');
+  };
+
+  const toggleGuideFlip = (id: string) => {
+    setFlippedGuides((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
 
   const bentoCards = [
     {
@@ -298,7 +365,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
           </div>
           <button
             onClick={() => setView('login' as any)}
-            className="shrink-0 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
+            className={`shrink-0 px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-mono font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap ${isLightMode ? 'text-amber-700' : 'text-amber-300'}`}
           >
             Review Full Disclaimer &amp; Login &rarr;
           </button>
@@ -319,7 +386,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
               <div>
                 <span className="text-[9px] font-mono tracking-widest text-[#c9a45c] uppercase block">Your Selected Helper Card</span>
                 <h4 className={`font-serif text-sm font-bold mt-0.5 ${isLightMode ? 'text-stone-900' : 'text-white'}`}>{savedProfile.name}</h4>
-                <p className="text-[10px] text-slate-500 mt-0.5">Friendly Guide: <span className="text-[#c9a45c] font-semibold">{savedProfile.deityId.toUpperCase()}</span> &middot; Happiness Level: <span className="text-[#c9a45c] font-bold">{Math.round((savedProfile.stats.respect + savedProfile.stats.resilience + savedProfile.stats.mindfulness + savedProfile.stats.grounding) / 4)}%</span></p>
+                <p className={`text-[10px] mt-0.5 ${isLightMode ? 'text-slate-600' : 'text-slate-500'}`}>Friendly Guide: <span className="text-[#c9a45c] font-semibold">{savedProfile.deityId.toUpperCase()}</span> &middot; Happiness Level: <span className="text-[#c9a45c] font-bold">{Math.round((savedProfile.stats.respect + savedProfile.stats.resilience + savedProfile.stats.mindfulness + savedProfile.stats.grounding) / 4)}%</span></p>
               </div>
             </div>
             <button 
@@ -333,9 +400,11 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
       </div>
  
       {/* Daily Affirmations from Deities */}
-      <DailyAffirmation />
+      <DailyAffirmation isLightMode={isLightMode} />
  
-      {/* Nine Bento-Grid Interactive Features Section */}
+      {/* ===== COMMENTED OUT: Twelve Fun Things to Do! ===== */}
+      {/*
+      {/* Nine Bento-Grid Interactive Features Section
       <div className="py-20 relative z-10">
         <div className="text-center mb-12 space-y-2">
           <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-[#c9a45c] block">Sanctuary Capabilities &amp; Interactive Tools</span>
@@ -478,7 +547,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
                 onClick={card.action}
                 className={`group p-8 rounded-[28px] border-2 transition-all duration-300 flex flex-col justify-between cursor-pointer relative overflow-hidden ${isLightMode ? 'bg-[#f4f0e6] border-[#dfd2be] hover:bg-[#eae4d3]' : 'bg-[#07130e] border-[#112d24] hover:bg-[#0a1e16] hover:shadow-[0_0_25px_rgba(20,184,166,0.15)]'}`}
               >
-                {/* Subtle ambient star background in card */}
+                {/* Subtle ambient star background in card
                 <div className="absolute inset-0 pointer-events-none overflow-hidden rounded-[28px]">
                   <div className="absolute top-[10%] left-[25%] w-[1.5px] h-[1.5px] rounded-full bg-white opacity-40 animate-pulse" />
                   <div className="absolute top-[20%] left-[45%] w-0.5 h-0.5 rounded-full bg-white opacity-25" />
@@ -490,12 +559,12 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
 
                 <div className="relative z-10">
                   <div className="flex justify-between items-start">
-                    {/* Top-Left Squircle Icon Container */}
+                    {/* Top-Left Squircle Icon Container
                     <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-[#c9a45c] border ${isLightMode ? 'bg-[#dfd2be]/30 border-[#dfd2be]' : 'bg-[#1c2e25] border-[#274c3c]'}`}>
                       <Icon className="w-5 h-5" />
                     </div>
                     
-                    {/* Top-Right Miniature Custom Visual Graphic */}
+                    {/* Top-Right Miniature Custom Visual Graphic
                     {renderMiniGraphic(card.id)}
                   </div>
 
@@ -513,6 +582,199 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
               </motion.div>
             );
           })}
+        </div>
+      </div> */}
+
+      {/* 12 Friendly Guides Carousel */}
+      <div className="py-20 relative z-10">
+        <div className="text-center mb-12 space-y-2">
+          <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-[#c9a45c] block">Meet Your Helpers</span>
+          <h2 className="font-serif text-3xl md:text-4xl font-bold tracking-tight">
+            12 Friendly Guides
+          </h2>
+          <p className={`text-xs max-w-lg mx-auto ${isLightMode ? 'text-slate-600' : 'text-slate-500'}`}>
+            Move your cursor left or right across the cards to glide through the guides.
+          </p>
+        </div>
+
+        <div
+          ref={guidesTrackRef}
+          onPointerMove={handleGuidesMove}
+          className={`relative overflow-hidden rounded-[28px] border-2 cursor-crosshair touch-pan-x ${isLightMode ? 'bg-[#f4f0e6] border-[#dfd2be]' : 'bg-[#03070f]/60 border-[#112d24] backdrop-blur-md'}`}
+        >
+          <div
+            ref={guidesScrollerRef}
+            className="flex gap-5 px-6 py-8 will-change-transform"
+            style={{ transform: `translateX(${-guideOffset}px)` }}
+          >
+            {CHARACTERS.map((char) => {
+              const isFlipped = !!flippedGuides[char.id];
+              return (
+                <div
+                  key={char.id}
+                  className="group shrink-0 w-[300px] h-[380px] cursor-pointer relative"
+                  style={{ perspective: '1000px' }}
+                  onClick={() => toggleGuideFlip(char.id)}
+                  onPointerEnter={() => { guidePausedRef.current = true; }}
+                  onPointerLeave={() => { guidePausedRef.current = false; }}
+                >
+                  <motion.div
+                    className="relative w-full h-full"
+                    style={{
+                      transformStyle: 'preserve-3d',
+                      transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+                      transition: 'transform 0.7s cubic-bezier(0.4, 0.2, 0.2, 1)',
+                    }}
+                  >
+                    {/* CARD FRONT */}
+                    <div
+                      className={`absolute inset-0 w-full h-full p-6 rounded-[24px] border-2 flex flex-col justify-between overflow-hidden ${isLightMode ? 'bg-white/70 border-[#dfd2be] hover:border-[#c9a45c]/60' : 'bg-[#07130e] border-[#112d24] hover:border-[#c9a45c]/50'}`}
+                      style={{
+                        backfaceVisibility: 'hidden',
+                        boxShadow: `0 0 30px ${char.colorScheme.glow}`,
+                      }}
+                    >
+                      <div
+                        className="absolute inset-0 rounded-full blur-[50px] opacity-20 pointer-events-none"
+                        style={{ background: `radial-gradient(circle, ${char.colorScheme.glow} 0%, transparent 70%)` }}
+                      />
+                      <div className="relative z-10 flex items-center gap-3">
+                        <div
+                          className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${isLightMode ? 'bg-[#dfd2be]/30 border-[#dfd2be]' : 'bg-[#1c2e25] border-[#274c3c]'}`}
+                          style={{ boxShadow: `0 0 18px ${char.colorScheme.glow}` }}
+                        >
+                          {getGuideIcon(char.symbolName, char.colorScheme.text)}
+                        </div>
+                        <div>
+                          <span className={`text-[9px] font-mono uppercase tracking-[0.18em] font-bold ${char.colorScheme.text}`}>
+                            {char.badge}
+                          </span>
+                          <h3 className="font-serif text-base font-bold leading-tight">
+                            {char.name}
+                          </h3>
+                        </div>
+                      </div>
+                      <div className="relative z-10">
+                        <p className="text-[11px] font-mono uppercase tracking-wider opacity-70 mb-3">
+                          {char.role}
+                        </p>
+                        <p className={`text-xs italic leading-relaxed ${isLightMode ? 'text-slate-600' : 'text-slate-400'}`}>
+                          {char.quote}
+                        </p>
+                      </div>
+                      <div className={`relative z-10 flex items-center justify-between text-[8px] uppercase tracking-[0.12em] ${isLightMode ? 'text-slate-600' : 'text-slate-500'}`}>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCharId(char.id);
+                            ambientEngine.start();
+                          }}
+                          className="flex items-center gap-1 font-mono text-[#c9a45c] bg-[#c9a45c]/10 border border-[#c9a45c]/30 hover:bg-[#c9a45c]/25 px-2 py-1 rounded-md cursor-pointer transition-all"
+                          title="Play nature/ethereal soundscape for this archetype"
+                        >
+                          <Volume2 className="w-2.5 h-2.5 text-[#c9a45c]" />
+                          <span>Ambiance 🎵</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleGuideChat(char.id);
+                          }}
+                          className={`hover:underline font-bold cursor-pointer ${isLightMode ? 'text-indigo-600 hover:text-indigo-800' : 'text-periwinkle hover:text-white'}`}
+                        >
+                          Sanctuary chat →
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* CARD BACK */}
+                    <div
+                      className={`absolute inset-0 w-full h-full p-6 rounded-[24px] border-2 flex flex-col justify-between ${isLightMode ? 'bg-white/85 border-[#c9a45c]/50' : 'bg-[#0a1512] border-[#c9a45c]/40'}`}
+                      style={{
+                        backfaceVisibility: 'hidden',
+                        transform: 'rotateY(180deg)',
+                        boxShadow: `0 0 30px ${char.colorScheme.glow}`,
+                      }}
+                    >
+                      <div>
+                        <div className={`border-b pb-3 mb-4 flex justify-between items-start ${isLightMode ? 'border-[#dfd2be]' : 'border-brown'}`}>
+                          <div>
+                            <h4 className={`font-serif text-lg font-medium ${isLightMode ? 'text-stone-900' : 'text-white'}`}>
+                              {char.name}
+                            </h4>
+                            <span className={`text-[10px] font-bold tracking-[0.12em] uppercase opacity-80 ${isLightMode ? 'text-emerald-800' : 'text-sage'}`}>
+                              {char.role} &middot; {char.artStyle}
+                            </span>
+                          </div>
+                          <span className={`text-[8px] font-mono tracking-[0.14em] uppercase px-2.5 py-1 rounded-full ${char.colorScheme.badge}`}>
+                            {char.badge}
+                          </span>
+                        </div>
+
+                        <div className="space-y-3">
+                          <div>
+                            <span className={`text-[10px] font-bold tracking-[0.2em] uppercase block mb-1 ${isLightMode ? 'text-emerald-800' : 'text-sage'}`}>
+                              Want
+                            </span>
+                            <p className={`font-serif text-[11px] leading-relaxed ${isLightMode ? 'text-slate-700' : 'text-slate-200'}`}>
+                              {char.want}
+                            </p>
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-bold tracking-[0.2em] text-[#e07070] uppercase block mb-1">
+                              Wound
+                            </span>
+                            <p className={`font-serif text-[11px] leading-relaxed ${isLightMode ? 'text-slate-700' : 'text-slate-200'}`}>
+                              {char.wound}
+                            </p>
+                          </div>
+                          <div className={`pt-2 ${isLightMode ? 'border-[#dfd2be]' : 'border-brown'} border-t`}>
+                            <span className={`text-[10px] font-bold tracking-[0.2em] uppercase block mb-1 ${isLightMode ? 'text-indigo-600' : 'text-periwinkle'}`}>
+                              Secret
+                            </span>
+                            <p className={`font-serif text-[11px] italic leading-relaxed opacity-95 ${isLightMode ? 'text-emerald-800' : 'text-sage'}`}>
+                              {char.secret}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 pt-4">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleGuideChat(char.id);
+                          }}
+                          className="flex-1 flex items-center justify-center gap-1.5 font-serif text-[9px] tracking-[0.14em] uppercase text-white bg-periwinkle-dark py-2.5 rounded-xl font-bold hover:bg-periwinkle-hover transition-all cursor-pointer shadow-[0_0_15px_rgba(159,166,255,0.15)]"
+                        >
+                          <MessageSquare className="w-3 h-3" />
+                          Chat Sanctuary
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleGuideFlip(char.id);
+                          }}
+                          className={`border-2 px-3.5 py-2.5 rounded-xl text-[9px] uppercase tracking-wider cursor-pointer ${isLightMode ? 'border-stone-400 text-stone-700 hover:border-stone-500 hover:text-stone-900' : 'border-brown hover:border-sage text-sage hover:text-white'}`}
+                        >
+                          Back
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className={`mt-4 flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.15em] opacity-60 ${isLightMode ? 'text-slate-600' : 'text-slate-500'}`}>
+          <span className="flex items-center gap-1.5">
+            <ChevronLeft className="w-3.5 h-3.5" /> Cursor Left
+          </span>
+          <span className="flex items-center gap-1.5">
+            Cursor Right <ChevronRight className="w-3.5 h-3.5" />
+          </span>
         </div>
       </div>
 
@@ -538,7 +800,7 @@ export default function Home({ setView, isLightMode = false }: HomeProps) {
             <p className={`text-sm leading-relaxed tracking-wide mb-4 ${isLightMode ? 'text-slate-700' : 'text-slate-300'}`}>
               Project Friend AI provides supportive, peer-style emotional listening and mindful grounding. It is non-clinical and is not a substitute for clinical psychiatric treatment, medical diagnosis, or emergency intervention.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs text-slate-500 mt-6">
+            <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs mt-6 ${isLightMode ? 'text-slate-600' : 'text-slate-500'}`}>
               <div className="flex items-start gap-2">
                 <ShieldCheck className="w-4 h-4 text-[#e07070] shrink-0 mt-0.5" />
                 <span>Your chats are a secret and stays only on your computer.</span>
