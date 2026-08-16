@@ -78,6 +78,10 @@ function isEnglishTranscript(text: string): boolean {
     && !/\b(?:arey|arre|haan|bhai|yaar|aur batao|batao|aap|kya|kaise|kaisa|hoon|theek)\b/i.test(text);
 }
 
+function stopStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach((track) => track.stop());
+}
+
 export default function LiveAvatarWorkspace() {
   const [selectedAvatarId, setSelectedAvatarId] = useState(() => {
     return localStorage.getItem('sanctuary_selected_avatar_id') || 'ema';
@@ -144,6 +148,10 @@ export default function LiveAvatarWorkspace() {
   // SpeechRecognition callbacks can retain an older React closure. Keep the
   // request lock in a ref so one utterance can never create parallel replies.
   const isSendingRef = useRef(false);
+  // A permission prompt can resolve after this screen has been closed. The
+  // token makes every late camera/microphone/speech result harmless.
+  const liveSessionRef = useRef(false);
+  const sessionTokenRef = useRef(0);
 
   const transcribeRecording = useCallback(async (fallback: string) => {
     const recorder = recorderRef.current;
@@ -241,9 +249,13 @@ export default function LiveAvatarWorkspace() {
   }, []);
 
   // ── Local Camera PiP ───────────────────────────────────────────────────
-  const startLocalCamera = useCallback(async () => {
+  const startLocalCamera = useCallback(async (sessionToken: number) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) {
+        stopStream(stream);
+        return;
+      }
       camStreamRef.current = stream;
       if (selfVideoRef.current) selfVideoRef.current.srcObject = stream;
       setCamOn(true);
@@ -253,7 +265,7 @@ export default function LiveAvatarWorkspace() {
   }, []);
 
   const stopLocalCamera = useCallback(() => {
-    camStreamRef.current?.getTracks().forEach((t) => t.stop());
+    stopStream(camStreamRef.current);
     camStreamRef.current = null;
     if (selfVideoRef.current) selfVideoRef.current.srcObject = null;
     setCamOn(false);
@@ -261,7 +273,7 @@ export default function LiveAvatarWorkspace() {
 
   const toggleCamera = () => {
     if (camOn) stopLocalCamera();
-    else startLocalCamera();
+    else startLocalCamera(sessionTokenRef.current);
   };
 
   const toggleMute = () => {
@@ -289,7 +301,7 @@ export default function LiveAvatarWorkspace() {
   // ── ElevenLabs Audio & Time-Locked Lip Sync ──────────────────────────
   const speakAvatarText = useCallback(
     async (text: string, directive?: AvatarDirective) => {
-      if (!text) return;
+      if (!text || !liveSessionRef.current) return;
       const spokenText = text;
 
       if (directive) {
@@ -320,6 +332,7 @@ export default function LiveAvatarWorkspace() {
           alignment?: unknown;
         };
         if (!payload.audioBase64) throw new Error('ElevenLabs returned no audio');
+        if (!liveSessionRef.current) return;
 
         const blob = base64ToAudioBlob(payload.audioBase64, payload.audioMime || 'audio/mpeg');
         const alignment = normalizeAlignment(payload.alignment);
@@ -340,6 +353,7 @@ export default function LiveAvatarWorkspace() {
           avatarEngine.setSpeechTimeline(createVisemeTimeline(spokenText, playback.duration));
         }
       } catch (error) {
+        if (!liveSessionRef.current) return;
         console.warn('[LiveAvatar TTS] ElevenLabs fallback to browser voice synthesis:', error);
         setTtsStatus('browser-speech-fallback');
 
@@ -385,7 +399,7 @@ export default function LiveAvatarWorkspace() {
 
   // ── Send Message Flow ──────────────────────────────────────────────────
   const handleSendUserMessage = async (userMsg: string) => {
-    if (!userMsg.trim() || isSendingRef.current) return;
+    if (!userMsg.trim() || isSendingRef.current || !liveSessionRef.current) return;
 
     // Guard against echo loop (avatar hearing its own TTS playback)
     if (audioController.isPlaying()) {
@@ -451,6 +465,13 @@ export default function LiveAvatarWorkspace() {
       directive = safeDirective({ emotion: 'warm', gesture: 'nod', intensity: 0.7 }, reply);
     }
 
+    // The user may have left the face-to-face screen while the AI reply was
+    // in flight. Do not render or speak a late response in the background.
+    if (!liveSessionRef.current) {
+      isSendingRef.current = false;
+      return;
+    }
+
     setLines((prev) => [
       ...prev,
       {
@@ -475,13 +496,18 @@ export default function LiveAvatarWorkspace() {
 
   // ── Start Call Session with short-turn, auto-restarting speech recognition ─
   const startCall = useCallback(async () => {
+    const sessionToken = ++sessionTokenRef.current;
+    liveSessionRef.current = true;
+    micOnRef.current = true;
+    setMicOn(true);
+    setCamOn(true);
     setStatus('connecting');
     setError('');
     setLines([]);
     setLiveCaption(null);
 
     // Non-blocking camera startup
-    startLocalCamera().catch(() => {});
+    startLocalCamera(sessionToken).catch(() => {});
 
     setStatus('live');
 
@@ -490,10 +516,16 @@ export default function LiveAvatarWorkspace() {
     if (SpeechRecognitionClass) {
       try {
         try {
-          micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) {
+            stopStream(stream);
+            return;
+          }
+          micStreamRef.current = stream;
         } catch {
           micStreamRef.current = null;
         }
+        if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) return;
         const rec = new SpeechRecognitionClass();
         rec.continuous = false;
         rec.interimResults = true;
@@ -502,9 +534,9 @@ export default function LiveAvatarWorkspace() {
         rec.lang = speechLang;
 
         const restart = (delay = 150) => {
-          if (!micOnRef.current || statusRef.current !== 'live') return;
+          if (!liveSessionRef.current || !micOnRef.current || statusRef.current !== 'live') return;
           window.setTimeout(() => {
-            if (!micOnRef.current || statusRef.current !== 'live') return;
+            if (!liveSessionRef.current || !micOnRef.current || statusRef.current !== 'live') return;
             try {
               rec.start();
               console.info('[SpeechRec] listening');
@@ -515,6 +547,10 @@ export default function LiveAvatarWorkspace() {
         };
 
         rec.onstart = () => {
+          if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) {
+            try { rec.abort(); } catch {}
+            return;
+          }
           console.info('[SpeechRec] microphone capture started');
           if (micStreamRef.current && typeof MediaRecorder !== 'undefined' && !recorderRef.current) {
             const recorder = new MediaRecorder(micStreamRef.current);
@@ -528,7 +564,7 @@ export default function LiveAvatarWorkspace() {
         };
 
         rec.onresult = (e: any) => {
-          if (!micOnRef.current || audioController.isPlaying()) return;
+          if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current || !micOnRef.current || audioController.isPlaying()) return;
           let interimStr = '';
           let finalStr = '';
 
@@ -573,11 +609,13 @@ export default function LiveAvatarWorkspace() {
         };
 
         rec.onend = () => {
+          if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) return;
           console.info('[SpeechRec] turn ended; restarting');
           if (!transcribingRef.current) restart();
         };
 
         rec.onerror = (e: any) => {
+          if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) return;
           console.warn('[SpeechRec] recognition error', e?.error || e);
           restart(350);
         };
@@ -601,22 +639,50 @@ export default function LiveAvatarWorkspace() {
     await speakAvatarText(greeting, directive);
   }, [currentAvatar.name, isAisha, speakAvatarText, startLocalCamera, transcribeRecording]);
 
-  // ── End Session ───────────────────────────────────────────────────────
-  const endCall = useCallback(async () => {
+  const releaseLiveResources = useCallback(() => {
+    liveSessionRef.current = false;
+    sessionTokenRef.current += 1;
+    micOnRef.current = false;
+    statusRef.current = 'ended';
+    transcribingRef.current = false;
+    isSendingRef.current = false;
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch {}
       recognitionRef.current = null;
     }
+    if (recorderRef.current?.state === 'recording') {
+      try { recorderRef.current.stop(); } catch {}
+    }
     recorderRef.current = null;
-    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    stopStream(micStreamRef.current);
     micStreamRef.current = null;
-    interruptAvatar();
-    stopLocalCamera();
+    stopStream(camStreamRef.current);
+    camStreamRef.current = null;
+    if (selfVideoRef.current) selfVideoRef.current.srcObject = null;
+    window.speechSynthesis?.cancel();
+    audioController.interrupt();
+    avatarEngine.clearSpeechTimeline();
+    avatarEngine.setState('idle');
+  }, []);
+
+  // ── End Session ───────────────────────────────────────────────────────
+  const endCall = useCallback(() => {
+    releaseLiveResources();
+    setMicOn(false);
+    setCamOn(false);
     setStatus('ended');
     setLiveCaption(null);
-  }, [interruptAvatar, stopLocalCamera]);
+  }, [releaseLiveResources]);
 
-  useEffect(() => () => { endCall(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Route changes unmount this component. Always release device tracks and
+  // queued speech even if a browser permission prompt resolves afterwards.
+  useEffect(() => () => { releaseLiveResources(); }, [releaseLiveResources]);
+
+  useEffect(() => {
+    const handleNavigationStop = () => releaseLiveResources();
+    window.addEventListener('face-to-face-stop', handleNavigationStop);
+    return () => window.removeEventListener('face-to-face-stop', handleNavigationStop);
+  }, [releaseLiveResources]);
 
   const handleFormSubmit = (e: FormEvent) => {
     e.preventDefault();
