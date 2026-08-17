@@ -9,6 +9,7 @@ import { getAvatarById } from './src/avatars';
 
 dotenv.config();
 
+
 // Ensure Gemini API key is available
 const apiKey = process.env.GEMINI_API_KEY;
 if (!apiKey) {
@@ -45,7 +46,7 @@ const logs: LogEntry[] = [];
 const maxLogs = 100;
 
 const serverConfig: ServerConfig = {
-  geminiModel: 'gemini-3.5-flash',
+  geminiModel: 'gemini-3.7-flash',
   temperature: 0.8,
   broadcastMessage: 'Welcome to the Divine Companion Sanctuary. The celestial alignment is favorable today.',
   enableLyriaMusic: true,
@@ -77,12 +78,17 @@ function addLog(endpoint: string, payload: any, status: 'success' | 'error', det
 }
 
 function enforceEnglishLiveReply(value: string): string {
-  return value
+  const cleaned = value
     .replace(/[\u0900-\u097F]/g, '')
-    .replace(/\b(?:arey|arre|haan|bhai|yaar|aur batao|batao|aap batao|sach mein)\b[,!:.\-]?/gi, '')
     .replace(/\s{2,}/g, ' ')
     .replace(/\s+([,!.?])/g, '$1')
     .trim();
+  // Do not let Hinglish slip through as an apparently valid English reply.
+  // Returning an empty string makes the caller use its safe English fallback.
+  if (/\b(?:yaar|bhai|arre|arey|haan|nahi|nahin|kuch|bas|yahan|baithi|baitha|tera|meri|mera|aap|kya|kaise|kaisa|batao|aur batao|chal raha|wait kar|theek|achha|accha|mujhe|tumhara|tumhari|kar rahi|kar raha)\b/i.test(cleaned)) {
+    return '';
+  }
+  return cleaned;
 }
 
 async function withResponseDeadline<T>(work: Promise<T>, timeoutMs: number, label: string): Promise<T> {
@@ -340,14 +346,22 @@ async function startServer() {
       try { dotenv.config({ override: true }); } catch {}
       elevenApiKey = process.env.ELEVENLABS_API_KEY;
     }
-    const { text, voiceId, avatarId, includeTimestamps } = req.body || {};
+    const { text, avatarId, includeTimestamps } = req.body || {};
     if (!text || typeof text !== 'string') {
       return res.status(400).json({ error: 'Text string is required for TTS.' });
     }
 
-    // Default warm human voice: Rachel (21m00Tcm4TlvDq8ikWAM)
+    // Strict avatar voice allowlist: never fall back to an environment or
+    // request-provided voice, which previously caused voice drift.
     const configuredAvatar = typeof avatarId === 'string' ? getAvatarById(avatarId) : null;
-    const targetVoiceId = configuredAvatar?.voiceId || voiceId || process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM';
+    const targetVoiceId = configuredAvatar?.id === 'ema'
+      ? 'EXAVITQu4vr4xnSDxMaL'
+      : configuredAvatar?.id === 'aryan'
+        ? 'TX3LPaxmHKxFdv7VOQHJ'
+        : null;
+    if (!targetVoiceId) {
+      return res.status(400).json({ error: 'A valid avatar voice is required.' });
+    }
 
     if (!elevenApiKey) {
       return res.status(501).json({ error: 'ElevenLabs API key is not configured.' });
@@ -391,8 +405,10 @@ async function startServer() {
           },
           body: JSON.stringify({
             text: text.slice(0, 1000),
-            model_id: 'eleven_turbo_v2_5',
-            voice_settings: { stability: 0.5, similarity_boost: 0.8, style: 0.2, use_speaker_boost: true },
+            // Keep the same model as the primary path so a timestamp-route
+            // fallback does not unexpectedly change the companion's voice.
+            model_id: 'eleven_flash_v2_5',
+            voice_settings: { stability: 0.75, similarity_boost: 0.9, style: 0, use_speaker_boost: true },
           }),
         });
       }
@@ -454,7 +470,7 @@ async function startServer() {
 
     const language = typeof settings.language === 'string' ? settings.language.slice(0, 60) : 'English';
     const personality = typeof settings.personality === 'string' ? settings.personality.slice(0, 200) : 'warm, authentic, and caring close friend in Friend AI';
-    const companionName = typeof settings.name === 'string' ? settings.name.slice(0, 50) : 'Aryan';
+    const companionName = typeof settings.name === 'string' ? settings.name.slice(0, 50) : 'Varun';
     const basePrompt = typeof settings.systemPrompt === 'string' && settings.systemPrompt.trim()
       ? settings.systemPrompt.slice(0, 700)
       : `You are ${companionName}, a ${personality}. Talk warmly, naturally, authentically, and casually like a close, caring friend.`;
@@ -467,6 +483,9 @@ CORE HUMAN VIBE & GUIDELINES:
 3. NATURAL FLOW & CASUAL EXPRESSIONS: Naturally use friendly English conversational interjections ("Oh really?", "I totally get you", "Wait, tell me more!", "That makes sense", "I'm right here with you").
 4. QUICK & CRISP (CRITICAL FOR LIVE VIDEO): Keep responses punchy, natural, and concise (strictly 1-2 natural sentences, max 3). This ensures instant replies and fast voice playback without robotic monologues.
 5. DYNAMIC NON-VERBAL EXPRESSIONS: Match your facial expressions and gestures to the emotion.
+6. EMOTIONAL UNDERSTANDING: Respond to the user's actual context and feelings. Briefly reflect what you understood before giving an opinion or practical suggestion; ask a gentle clarifying question when needed.
+7. WHO/UNESCO-ALIGNED WELL-BEING: Be person-centred, recovery-oriented, rights-respecting, inclusive, and dignity-preserving. Support emotional awareness, empathy, healthy coping, communication, connection, and realistic next steps. Never shame, manipulate, diagnose, prescribe, promise healing, or create dependency.
+8. SCOPE AND SAFETY: Stay on topic and never invent memories, facts, motives, or personal details. You are a supportive AI friend, not a doctor, therapist, or emergency service. For persistent/severe concerns, encourage qualified human support. For immediate danger or self-harm risk, prioritise immediate safety and urge local emergency help and trusted human contact.
 Output STRICT JSON ONLY:
 {"text":"...","emotion":"happy|warm|caring|reflective|concerned|celebratory|playful|neutral","intensity":0.85,"gesture":"idle|nod|small_wave|hand_heart|thinking|open_palms|shrug|tilt_head|listen_lean","directive":{"tone":"warm|encouraging|reflective|celebratory|concerned|playful","expression":"soft-smile|attentive|thoughtful|bright|concerned","gesture":"idle|nod|open-palms|hand-heart|thinking|small-wave|shrug|tilt-head|listen-lean"}}`;
 
@@ -474,18 +493,33 @@ Output STRICT JSON ONLY:
       let rawResponseText = '';
       let geminiTimedOut = false;
 
-      // 1. Try Gemini API first
+      // 1. Try Gemini API first (with automatic flash-lite fallback)
       try {
         if (apiKey) {
-          const response = await withResponseDeadline(ai.models.generateContent({
-              model: serverConfig.geminiModel,
+          const modelToUse = serverConfig.geminiModel || 'gemini-3.7-flash';
+          let response: any;
+          try {
+            response = await withResponseDeadline(ai.models.generateContent({
+              model: modelToUse,
               contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
               config: {
                 temperature: 0.35,
                 responseMimeType: 'application/json',
                 systemInstruction,
               },
-            }), 1800, 'Gemini live response');
+            }), 4500, 'Gemini live response');
+          } catch (firstErr: any) {
+            console.warn('[Gemini Model Fallback] Trying gemini-3.5-flash-lite:', firstErr?.message);
+            response = await withResponseDeadline(ai.models.generateContent({
+              model: 'gemini-3.5-flash-lite',
+              contents: history.map(turn => ({ role: turn.role === 'assistant' ? 'model' : 'user', parts: [{ text: turn.text }] })),
+              config: {
+                temperature: 0.35,
+                responseMimeType: 'application/json',
+                systemInstruction,
+              },
+            }), 4500, 'Gemini fallback response');
+          }
           rawResponseText = response?.text || '';
         }
       } catch (geminiErr: any) {
@@ -493,17 +527,20 @@ Output STRICT JSON ONLY:
         console.warn(`[Gemini API Notice] ${geminiErr.message}.${geminiTimedOut ? ' Using instant local reply.' : ' Trying OpenAI fallback...'}`);
       }
 
-      // 2. Try OpenAI only for an immediate provider failure. On a slow
-      // provider, return the local reply instead of making the live call wait.
+      // 2. Try OpenAI only for an immediate provider failure
       if (!rawResponseText && !geminiTimedOut && process.env.OPENAI_API_KEY) {
-        const conversationText = history.map(h => `${h.role === 'assistant' ? companionName : 'User'}: ${h.text}`).join('\n');
-        const openAiRes = await withResponseDeadline(
-          safeCallOpenAI(systemInstruction, conversationText, true),
-          1500,
-          'OpenAI live response',
-        );
-        if (openAiRes?.text) {
-          rawResponseText = openAiRes.text;
+        try {
+          const conversationText = history.map(h => `${h.role === 'assistant' ? companionName : 'User'}: ${h.text}`).join('\n');
+          const openAiRes = await withResponseDeadline(
+            safeCallOpenAI(systemInstruction, conversationText, true),
+            2500,
+            'OpenAI live response',
+          );
+          if (openAiRes?.text) {
+            rawResponseText = openAiRes.text;
+          }
+        } catch (openAiErr: any) {
+          console.warn('[OpenAI Notice]', openAiErr?.message || openAiErr);
         }
       }
 
@@ -533,17 +570,17 @@ Output STRICT JSON ONLY:
       // Dynamic fallback if text is empty
       if (!text) {
         const lower = message.toLowerCase().trim();
-        const isAryanCompanion = companionName.toUpperCase().includes('ARYAN');
+        const isVarunCompanion = companionName.toUpperCase().includes('VARUN');
         if (lower.includes('kaisa hai') || lower.includes('kaise ho') || lower.includes('kya hal') || lower.includes('bhai') || lower.includes('yaar')) {
-          text = isAryanCompanion
+          text = isVarunCompanion
             ? "I am doing really well, my friend. Tell me, how has your day been going?"
             : "I am doing really well, and I am glad we are talking. How has your day been going?";
         } else if (lower.includes('hi') || lower.includes('hello') || lower.includes('hey')) {
-          text = isAryanCompanion
+          text = isVarunCompanion
             ? "Hey, my friend! It is really good to connect with you. What is going on today?"
             : "Hey! So wonderful to see you face to face! How is your day going?";
         } else {
-          text = isAryanCompanion
+          text = isVarunCompanion
             ? "I hear you, my friend. I am right here with you. Tell me what is on your mind."
             : "I hear you! I'm right here with you. Tell me what's on your heart right now.";
         }

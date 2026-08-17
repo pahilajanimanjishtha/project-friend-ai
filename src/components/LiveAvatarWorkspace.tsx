@@ -65,11 +65,15 @@ function chooseBrowserVoice(avatar: Avatar): SpeechSynthesisVoice | null {
   if (!voices.length) return null;
   const female = avatar.voice === 'feminine';
   const preferred = female
-    ? [/samantha/i, /zira/i, /aria/i, /jenny/i, /female/i, /google us english/i]
-    : [/daniel/i, /alex/i, /guy/i, /david/i, /male/i, /google uk english male/i];
-  return preferred.flatMap((pattern) => voices.filter((voice) => pattern.test(voice.name)))
-    .find((voice) => /^en(-|_)/i.test(voice.lang))
-    || voices.find((voice) => /^en(-|_)/i.test(voice.lang) && voice.name.toLowerCase() !== (female ? 'daniel' : 'samantha'))
+    ? [/natural.*female/i, /online.*natural.*jenny/i, /jenny/i, /aria/i, /samantha/i, /zira/i, /female/i, /google us english/i]
+    : [/natural.*male/i, /online.*natural.*guy/i, /guy/i, /daniel/i, /alex/i, /david/i, /male/i, /google uk english male/i];
+  
+  for (const pattern of preferred) {
+    const match = voices.find(v => pattern.test(v.name) && /^en/i.test(v.lang));
+    if (match) return match;
+  }
+  return voices.find((v) => /^en/i.test(v.lang) && (female ? !/male|david|daniel|guy|alex/i.test(v.name) : !/female|samantha|zira|aria|jenny/i.test(v.name)))
+    || voices.find((v) => /^en/i.test(v.lang))
     || voices[0];
 }
 
@@ -298,7 +302,7 @@ export default function LiveAvatarWorkspace() {
     }, 400);
   }, []);
 
-  // ── ElevenLabs Audio & Time-Locked Lip Sync ──────────────────────────
+  // ── ElevenLabs Audio & Time-Locked Lip Sync with Browser Fallback ─────
   const speakAvatarText = useCallback(
     async (text: string, directive?: AvatarDirective) => {
       if (!text || !liveSessionRef.current) return;
@@ -320,7 +324,6 @@ export default function LiveAvatarWorkspace() {
           body: JSON.stringify({
             text: spokenText,
             avatarId: currentAvatar.id,
-            voiceId: currentAvatar.voiceId,
             includeTimestamps: true,
           }),
         });
@@ -347,17 +350,15 @@ export default function LiveAvatarWorkspace() {
         avatarEngine.setState('speaking');
         setTtsStatus(`elevenlabs-ready${alignment ? '-aligned' : '-fallback-timing'}`);
         const playback = await audioController.playAudioBlob(blob);
-        // ElevenLabs audio duration is authoritative. Rebuild the fallback
-        // timeline after playback starts so lips stay locked to real audio.
         if (!alignment && playback.duration > 0) {
           avatarEngine.setSpeechTimeline(createVisemeTimeline(spokenText, playback.duration));
         }
       } catch (error) {
         if (!liveSessionRef.current) return;
-        console.warn('[LiveAvatar TTS] ElevenLabs fallback to browser voice synthesis:', error);
+        console.warn('[LiveAvatar TTS] ElevenLabs unavailable, switching to browser neural voice:', error);
         setTtsStatus('browser-speech-fallback');
 
-        // Clean Web Speech Synthesis Fallback (guaranteed audio output)
+        // High-Quality Web Speech Synthesis Fallback
         if (typeof window !== 'undefined' && window.speechSynthesis) {
           window.speechSynthesis.cancel();
           const utterance = new SpeechSynthesisUtterance(spokenText);
@@ -370,8 +371,7 @@ export default function LiveAvatarWorkspace() {
           const timeline = createVisemeTimeline(spokenText, dur);
           avatarEngine.setSpeechTimeline(timeline);
           avatarEngine.setState('speaking');
-          // Keep the GLB/VRM mouth animation alive even when ElevenLabs is
-          // unavailable and browser speech is used as the audio fallback.
+
           audioController.startSyntheticPlayback(dur, () => {
             avatarEngine.clearSpeechTimeline();
             avatarEngine.setState('idle');
@@ -394,7 +394,7 @@ export default function LiveAvatarWorkspace() {
         }
       }
     },
-    [isAisha, currentAvatar.voiceId],
+    [isAisha, currentAvatar],
   );
 
   // ── Send Message Flow ──────────────────────────────────────────────────
@@ -501,6 +501,7 @@ export default function LiveAvatarWorkspace() {
     micOnRef.current = true;
     setMicOn(true);
     setCamOn(true);
+    statusRef.current = 'live';
     setStatus('connecting');
     setError('');
     setLines([]);
@@ -527,7 +528,9 @@ export default function LiveAvatarWorkspace() {
         }
         if (!liveSessionRef.current || sessionToken !== sessionTokenRef.current) return;
         const rec = new SpeechRecognitionClass();
-        rec.continuous = false;
+        // Keep one recognition session alive where supported. The onend
+        // restart below remains as a fallback for browsers that stop turns.
+        rec.continuous = true;
         rec.interimResults = true;
         rec.maxAlternatives = 1;
         // Supports Indian accents, Hindi, and English speech without mangling
@@ -633,7 +636,7 @@ export default function LiveAvatarWorkspace() {
     // Initial Greeting based on selected companion
     const greeting = isAisha
       ? `Hey! I'm Aisha, your caring friend. It's so wonderful to connect with you face to face! How's your day treating you so far?`
-      : `Hey there! I am Aryan, your companion and friend. I'm right here with you. How are you feeling today?`;
+      : `Hey there! I am Varun, your companion and friend. I'm right here with you. How are you feeling today?`;
     const directive = safeDirective({ emotion: 'happy', gesture: 'small-wave', intensity: 0.8 }, greeting);
     setLines([{ id: '1', role: 'companion', text: greeting, timestamp: Date.now(), emotion: 'happy', gesture: 'small-wave' }]);
     await speakAvatarText(greeting, directive);
@@ -693,12 +696,6 @@ export default function LiveAvatarWorkspace() {
     }
   };
 
-  // Quick Emotion / Gesture triggers for interactive exploration
-  const triggerQuickAction = (actionText: string, gesture: AvatarGesture, emotion: AvatarEmotion) => {
-    avatarEngine.triggerGesture(gesture);
-    handleSendUserMessage(actionText);
-  };
-
   return (
     <div className="min-h-[85vh] bg-[#070e17] text-white rounded-3xl border border-white/10 overflow-hidden flex flex-col relative shadow-2xl">
       {/* ── Top Bar / Header ────────────────────────────────────────────── */}
@@ -744,7 +741,7 @@ export default function LiveAvatarWorkspace() {
                     interruptAvatar();
                     const greeting = av.id === 'ema'
                       ? `Hey! I'm Aisha, your caring friend. It's so wonderful to connect with you face to face! How's your day treating you so far?`
-                      : `Hey there! I am Aryan, your companion and friend. I'm right here with you. How are you feeling today?`;
+                      : `Hey there! I am Varun, your companion and friend. I'm right here with you. How are you feeling today?`;
                     const dir = safeDirective({ emotion: 'happy', gesture: 'small-wave', intensity: 0.8 }, greeting);
                     setLines([{ id: `${Date.now()}-c`, role: 'companion', text: greeting, timestamp: Date.now(), emotion: 'happy', gesture: 'small-wave' }]);
                     void speakAvatarText(greeting, dir);

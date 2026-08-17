@@ -266,13 +266,28 @@ export default function AvatarCallWorkspace() {
     }
 
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = settings.language === 'Hindi' ? 'hi-IN' : 'en-IN';
-    utterance.rate = 0.96;
+    utterance.lang = settings.language === 'Hindi' ? 'hi-IN' : 'en-US';
+    utterance.rate = 0.98;
+    const isFeminine = settings.voice === 'feminine';
+    utterance.pitch = isFeminine ? 1.08 : 0.92;
+    if (typeof window !== 'undefined' && window.speechSynthesis) {
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = isFeminine
+        ? [/natural.*female/i, /online.*natural.*jenny/i, /jenny/i, /aria/i, /samantha/i, /zira/i, /female/i]
+        : [/natural.*male/i, /online.*natural.*guy/i, /guy/i, /daniel/i, /alex/i, /david/i, /male/i];
+      for (const pattern of preferred) {
+        const match = voices.find(v => pattern.test(v.name) && /^en/i.test(v.lang));
+        if (match) {
+          utterance.voice = match;
+          break;
+        }
+      }
+    }
     utterance.onboundary = () => setAmplitude(0.2 + Math.random() * 0.28);
     utterance.onend = () => { setSpeaking(false); setAmplitude(0.03); };
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis?.speak(utterance);
-  }, [settings.language, readAmplitude]);
+  }, [settings.language, settings.voice, readAmplitude]);
 
   // ─── Send Message ────────────────────────────────────────────────────
   const send = useCallback(async (event?: FormEvent) => {

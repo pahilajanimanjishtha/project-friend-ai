@@ -303,7 +303,7 @@ export default function AvatarCustomize({
       const response = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text, voiceId: avatar.voiceId, includeTimestamps: true }),
+        body: JSON.stringify({ text, avatarId: avatar.id, includeTimestamps: true }),
       });
       if (!response.ok) throw new Error(`TTS failed (${response.status})`);
       const payload = await response.json() as { audioBase64?: string; audioMime?: string };
@@ -313,25 +313,10 @@ export default function AvatarCustomize({
       setAmplitude(0.03);
       return;
     } catch (error) {
-      console.warn('[Avatar Greeting TTS] ElevenLabs unavailable; using browser fallback', error);
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.94;
-      utterance.onboundary = (e: SpeechSynthesisEvent) => {
-        if (e.name === 'word') {
-          setAmplitude(0.25 + Math.random() * 0.4);
-          setTimeout(() => setAmplitude(0.04), 140);
-        }
-      };
-      utterance.onend = () => {
-        setSpeaking(false);
-        setAmplitude(0.03);
-      };
-      utterance.onerror = () => {
-        setSpeaking(false);
-        setAmplitude(0.03);
-      };
-      window.speechSynthesis?.speak(utterance);
+      console.warn('[Avatar Greeting TTS] Configured ElevenLabs voice unavailable', error);
+      setSpeaking(false);
+      setAmplitude(0);
+      return;
     }
   }, []);
 
